@@ -8,19 +8,21 @@ class BiquadLoon:
 	A = 1	# cross-sectional area
 	m = 1	# balloon mass
 
+	# Init BiquadLoon
+	#
 	def __init__(self, *args, **kwargs):
+		# Set flags indicating which kwargs were provided
 		xi = kwargs.get('xi') != None
 		yi = kwargs.get('yi') != None
 		zi = kwargs.get('zi') != None
 		Fs = kwargs.get('Fs') != None
 		m = kwargs.get('m') != None
 
-		k = 1.0 / kwargs.get('m') if m else 1.0
-		f = kwargs.get('Fs') if Fs else 1.0
+		k = 1.0 / kwargs.get('m') if m else 1.0		# inverse mass scaling factor (1/kg)	[default: m = 1 kg]
+		f = kwargs.get('Fs') if Fs else 1.0			# sampling frequency (Hz)				[default: Fs = 1 Hz]
 
-		if not Fs:
-			print("WARNING in __init__(): sampling rate must be provided, using default rate of 1 Hz.\n")
-
+		# Set up transfer function for motion in 3D
+		# Each transfer function takes a force as input and outputs a position
 		self.Hx = DoubleIntegrator(i=k, Fs=f)
 		self.Hy = DoubleIntegrator(i=k, Fs=f)
 		self.Hz = DoubleIntegrator(i=k, Fs=f)
@@ -29,6 +31,7 @@ class BiquadLoon:
 		return "x: " + str(self.Hx.get_curr_val()) + ", y: " + str(self.Hy.get_curr_val()) + ", z: " + str(self.Hz.get_curr_val())
 
 	def update(self, *args, **kwargs):
+		# Set flags indicating which kwargs were provided
 		fx = kwargs.get('fx') != None
 		fy = kwargs.get('fy') != None
 		fz = kwargs.get('fz') != None
