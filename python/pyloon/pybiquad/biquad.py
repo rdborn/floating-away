@@ -1,18 +1,18 @@
 import numpy as np
 
 class Biquad:
-    a = np.zeros(3) # denominator coefficients
-    b = np.zeros(3) # numerator coefficients
-    w = np.zeros(3) # delay registers
-    y = 0           # output
-    n = 3           # length of coefficient vectors
-    Ts = 1          # sampling rate
-
     # __init__()
     # Master init function (gets called with every object instantiation).
     # Type of initialization is implied by the kwargs. If conflicting
     # initializations are detected, the default initialization is used.
     def __init__(self, *args, **kwargs):
+        self.a = np.zeros(3) # denominator coefficients
+        self.b = np.zeros(3) # numerator coefficients
+        self.w = np.zeros(3) # delay registers
+        self.y = 0           # output
+        self.n = 3           # length of coefficient vectors
+        self.Ts = 1          # sampling rate
+
         # Set flags indicating which kwargs were provided
         num = kwargs.get('num') != None
         den = kwargs.get('den') != None
