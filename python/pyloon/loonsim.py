@@ -1,5 +1,5 @@
 from pyflow.flowfields2d import FlowField3DPlanar as ff3
-from pyloon.simpleloon import SimpleLoon
+from pyloon.multiinputloon import MultiInputLoon as Loon
 from numpy import cos, sin
 
 import numpy as np
@@ -15,9 +15,25 @@ class LoonSim:
 	loon_history = DataFrame(columns=['t','x','y','z'])
 	history_plot = plt.figure().gca(projection='3d')
 
-	def __init__(self, x, y, z):
-		self.field = ff3(x, y, z)
-		self.loon = SimpleLoon(x/2, y/2, z/2)
+	def __init__(self, *args, **kwargs):
+		xdim = kwargs.get('xdim') != None
+		ydim = kwargs.get('ydim') != None
+		zdim = kwargs.get('zdim') != None
+		xi = kwargs.get('xi') != None
+		yi = kwargs.get('yi') != None
+		zi = kwargs.get('zi') != None
+		Fs = kwargs.get('Fs') != None
+
+		self.xdim = kwargs.get('xdim') if xdim else 10.0	# World x dimension (m)  [default: 10 m]
+        self.ydim = kwargs.get('ydim') if ydim else 10.0	# World y dimension (m)  [default: 10 m]
+        self.zdim = kwargs.get('zdim') if zdim else 10.0	# World z dimension (m)  [default: 10 m]
+		x = kwargs.get('xi') if xi else self.xdim / 2.0		# Initial x coordinate (m)  [default: (xdim/2) m]
+		y = kwargs.get('yi') if yi else self.ydim / 2.0		# Initial x coordinate (m)  [default: (ydim/2) m]
+		z = kwargs.get('zi') if zi else self.zdim / 2.0		# Initial x coordinate (m)  [default: (zdim/2) m]
+		f = kwargs.get('Fs') if Fs else 1.0					# sampling frequency (Hz)   [default: Fs = 1 Hz]
+
+		self.field = ff3(self.xdim, self.ydim, self.zdim)
+		self.loon = Loon(xi=x, yi=y, zi=z)
 		loon_initial_pos = DataFrame([[self.tcurr, self.loon.x, self.loon.y, self.loon.z]], columns=['t','x','y','z'])
 		self.loon_history = self.loon_history.append(loon_initial_pos, ignore_index=True)
 
