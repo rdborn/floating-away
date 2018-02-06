@@ -2,6 +2,7 @@ import numpy as np
 import os, sys, inspect
 sys.path.insert(1, os.path.join(sys.path[0],'..'))
 from pybiquad.biquad import Integrator
+import copy
 
 class MultiInputLoon:
     # Init BiquadLoon
@@ -22,14 +23,14 @@ class MultiInputLoon:
         self.xi = self.x
         self.yi = self.y
         self.zi = self.z
-        f = kwargs.get('Fs') if Fs else 1.0			# sampling frequency (Hz)   [default: Fs = 1 Hz]
+        self.Fs = kwargs.get('Fs') if Fs else 1.0			# sampling frequency (Hz)   [default: Fs = 1 Hz]
         # Set up transfer function for motion in 3D
-        self.Hx_a2v = Integrator(i=1.0, Fs=f)
-        self.Hy_a2v = Integrator(i=1.0, Fs=f)
-        self.Hz_a2v = Integrator(i=1.0, Fs=f)
-        self.Hx_v2p = Integrator(i=1.0, Fs=f)
-        self.Hy_v2p = Integrator(i=1.0, Fs=f)
-        self.Hz_v2p = Integrator(i=1.0, Fs=f)
+        self.Hx_a2v = Integrator(i=1.0, Fs=self.Fs)
+        self.Hy_a2v = Integrator(i=1.0, Fs=self.Fs)
+        self.Hz_a2v = Integrator(i=1.0, Fs=self.Fs)
+        self.Hx_v2p = Integrator(i=1.0, Fs=self.Fs)
+        self.Hy_v2p = Integrator(i=1.0, Fs=self.Fs)
+        self.Hz_v2p = Integrator(i=1.0, Fs=self.Fs)
 
     def __str__(self):
         return "x: " + str(self.x) + ", y: " + str(self.y) + ", z: " + str(self.z)
