@@ -108,18 +108,18 @@ class LoonPathPlanner:
             vl = np.subtract(self.ev(working_loon.get_pos()), working_loon.get_vel())
 
             # Update positions based on predicted drag force with random disturbances
-            lp = loon_pos.update(   vz=u,
-                                    fx=self.__drag_force__(working_loon, vl[0]) + rng(c_noise),
-                                    fy=self.__drag_force__(working_loon, vl[1]) + rng(c_noise),
-                                    fz=self.__drag_force__(working_loon, 0) + rng(c_noise))
+            lp = working_loon.update(   vz=u,
+                                        fx=self.__drag_force__(working_loon, vl[0]) + rng(c_noise),
+                                        fy=self.__drag_force__(working_loon, vl[1]) + rng(c_noise),
+                                        fz=self.__drag_force__(working_loon, 0) + rng(c_noise))
 
             # Calculate weights of these edges
             w += np.linalg.norm(np.subtract(lp,pstar))
 
         x, y, z = loon.get_pos()
-        wlx, wly, wlz = working_loon.get_pos
+        wlx, wly, wlz = working_loon.get_pos()
         self.edges[hash4d([x,y,z,u])] = [hash3d([wlx, wly, wlz]), w]
-        self.backedges[hash3d([wlx,wly,wlz])] = [hash3d([x,y,z]), -u, w]
+        self.backedges[hash3d([wlx,wly,wlz])] = [hash3d([x,y,z]), u, w]
 
         self.montecarlo(working_loon, pstar, depth)
 

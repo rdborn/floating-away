@@ -65,7 +65,7 @@ class MultiInputLoon:
         self.Hz_a2v.update(az)
 
     def __apply_vel__(self, *args, **kwargs):
-        vx = parsekw(args.get('vx'), 0.0)
+        vx = parsekw(kwargs.get('vx'), 0.0)
         vy = parsekw(kwargs.get('vy'), 0.0)
         vz = parsekw(kwargs.get('vz'), 0.0)
         self.Hx_v2p.update(vx + self.Hx_a2v.get_curr_val())
