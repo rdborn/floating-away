@@ -6,18 +6,13 @@ sys.path.insert(1, os.path.join(sys.path[0],'..'))
 from pyutils.pyutils import vector_sum
 
 class FlowField3DPlanar:
-	xdim = 1
-	ydim = 1
-	zdim = 1
-	dynamic_viscosity = 1
-	density = 0.25
-
 	def __init__(self, x, y, z):
 		self.xdim = max(x, 1)
 		self.ydim = max(y, 1)
 		self.zdim = max(z, 1)
 		self.magnitude = np.zeros((self.xdim, self.ydim, self.zdim))
 		self.direction = np.zeros((self.xdim, self.ydim, self.zdim))
+		self.density = 0.25
 
 	def set_flow(self, x, y, z, mag, angle):
 		if not self.__check_validity__(x, y, z):

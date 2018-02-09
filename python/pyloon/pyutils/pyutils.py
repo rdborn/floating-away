@@ -1,7 +1,7 @@
 import numpy as np
 
-def parsekw(kwarg, default):
-    return (kwarg if kwarg != None else default)
+def parsekw(kwargs, kw, default):
+    return (kwarg.get(kw) if all(np.array(kwargs,get(kw)) != np.array(None)) else default)
 
 def hash3d(p):
     P0 = 73856093
