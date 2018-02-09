@@ -1,3 +1,5 @@
+import numpy as np
+
 for i in range(100):
     u = i / 10.0
     v = 0.0
@@ -17,4 +19,4 @@ for i in range(100):
         if w < w90 and w > w10:
             T += dt
         w = u - v
-    print("u: " + str(u) + ", T: " + str(T))
+    print("u: " + str(u) + ", T: " + str((T)))

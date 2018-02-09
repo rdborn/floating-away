@@ -1,4 +1,5 @@
 from pyflow.flowfields2d import FlowField3DPlanar as ff3
+from pyflow.soundingfield import SoundingField as SF
 from pyloon.multiinputloon import MultiInputLoon as Loon
 from numpy import cos, sin
 
@@ -31,8 +32,13 @@ class LoonSim:
 
 		self.dt = 1.0 / f
 		self.Fs = f
-		self.field = ff3(self.xdim, self.ydim, self.zdim)
-		self.loon = Loon(xi=x, yi=y, zi=z, Fs=f)
+		file = parsekw(kwargs.get('file'),"ERR_NO_FILE")
+		if file == "ERR_NO_FILE":
+			self.field = ff3(self.xdim, self.ydim, self.zdim)
+			self.loon = Loon(xi=x, yi=y, zi=z, Fs=f)
+		else:
+			self.field = SF(file=file)
+			self.loon = Loon(xi=0.0, yi=0.0, zi=15000, Fs=f)
 		loon_initial_pos = DataFrame([[self.tcurr, self.loon.x, self.loon.y, self.loon.z]], columns=['t','x','y','z'])
 		self.loon_history = self.loon_history.append(loon_initial_pos, ignore_index=True)
 
@@ -46,12 +52,14 @@ class LoonSim:
 		self.dt = 1.0 / hz
 
 	def propogate(self, u):
-		mag, angle = self.field.get_flow(self.loon.x, self.loon.y, self.loon.z)
+		mag, angle = self.field.get_flow(self.loon.get_pos())
 		vloon = self.loon.get_vel()
-		fx = self.__drag_force__(mag * cos(angle) - vloon[0])
-		fy = self.__drag_force__(mag * sin(angle) - vloon[1])
+		fx = 0 #self.__drag_force__(mag * cos(angle) + rng(0.0) - vloon[0])
+		fy = 0 #self.__drag_force__(mag * sin(angle) + rng(0.0) - vloon[1])
+		vx = mag * cos(angle)
+		vy = mag * sin(angle)
 		vz = u
-		self.loon.update(fx=fx, fy=fy, vz=vz)
+		self.loon.update(fx=fx, fy=fy, vx=vx, vy=vy, vz=vz)
 		self.tcurr += self.dt
 		loon_pos = DataFrame([[self.tcurr, self.loon.x, self.loon.y, self.loon.z]], columns=['t','x','y','z'])
 		self.loon_history = self.loon_history.append(loon_pos, ignore_index=True)

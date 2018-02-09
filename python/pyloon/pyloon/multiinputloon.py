@@ -49,6 +49,7 @@ class MultiInputLoon:
         p_x = parsekw(kwargs.get('px'), 0.0)
         p_y = parsekw(kwargs.get('py'), 0.0)
         p_z = parsekw(kwargs.get('pz'), 0.0)
+        # print("fx: " + str(f_x) + ", fy: " + str(f_y) + ", vx: " + str(v_x) + ", vy: " + str(v_y) + ", vz: " + str(v_z))
         self.__apply_accel__(   ax=(a_x + f_x / self.m),
                                 ay=(a_y + f_y / self.m),
                                 az=(a_z + f_z / self.m))

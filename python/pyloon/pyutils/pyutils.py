@@ -17,7 +17,7 @@ def hash4d(p):
     return (int(p[0]*P0) ^ int(p[1]*P1) ^ int(p[2]*P2) ^ int(p[3]*P3))
 
 def rng(c):
-    return (0.5 - np.random.rand()) * c
+    return 2 * (0.5 - np.random.rand()) * c
 
 def vector_sum(mag1, dir1, mag2, dir2):
     xcomp = mag1 * np.cos(dir1) + mag2 * np.cos(dir2)
