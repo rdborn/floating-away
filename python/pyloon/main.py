@@ -1,27 +1,20 @@
 from loonsim import LoonSim
-from optiloon.optiloon import LoonPathPlanner
+from optiloon.loonpathplanner import LoonPathPlanner
 import numpy as np
 from pandas import DataFrame
 from matplotlib import pyplot as plt
 from skewt import SkewT
 
 # Set up simulation parameters
-xdim = 100
-ydim = 100
-zdim = 100
 hz = 0.2
 duration = 6
 
 # Set up flow field
 file = "./weather-data/oak_2017_07_01_00z.txt"
-LS = LoonSim(file=file, Fs=hz)
+LS = LoonSim(file=file, Fs=hz, xi=0, yi=0, zi=15000)
 
 # Set point
 pstar = [0.0, 0.0, 15000.0]
-
-# Set up the plot
-myplot = plt.figure().gca(projection='3d')
-plt.ion()
 
 last_pos = LS.loon.get_pos()
 pos = last_pos
@@ -50,18 +43,14 @@ while(True):
 	# Extract the optimal policy found by our path planner
 	pol = LPP.policy()
 
-	# Reset the path planner for reuse
-	LPP.reset()
-
 	# Implement the first steps of the optimal policy
 	N = 1; # number of steps to take
 	for j in range(N):
 		print("Control effort: " + str(pol[-j-1]))
 		for t in range(np.int(np.ceil(LPP.branch_length*LS.Fs))):
 			LS.propogate(pol[-j-1]) # move the balloon along
-			pos = LS.loon.get_pos() # get balloon's position
-			myplot.scatter(pos[0],pos[1],pos[2]) # plot the position
-	plt.pause(0.0001) # redraw the plot
+	pos = LS.loon.get_pos() # get balloon's position
+	LS.plot()
 	print(pos)
 
 while(True):

@@ -1,3 +1,7 @@
+############################################
+# DEPRECATED (see LoonPathPlanner for replacement)
+############################################
+
 import numpy as np
 from sklearn.gaussian_process import GaussianProcessRegressor as GPR
 from sklearn.gaussian_process.kernels import RBF, Matern, WhiteKernel, ConstantKernel as C
