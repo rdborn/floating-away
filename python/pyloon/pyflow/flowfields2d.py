@@ -1,18 +1,22 @@
+############################################
+# DEPRECATED
+############################################
+
 import numpy as np
 
-class FlowField3DPlanar:
-	xdim = 1
-	ydim = 1
-	zdim = 1
-	dynamic_viscosity = 1
-	density = 1
+import os, sys, inspect
+sys.path.insert(1, os.path.join(sys.path[0],'..'))
 
+from pyutils.pyutils import vector_sum
+
+class FlowField3DPlanar:
 	def __init__(self, x, y, z):
 		self.xdim = max(x, 1)
 		self.ydim = max(y, 1)
 		self.zdim = max(z, 1)
 		self.magnitude = np.zeros((self.xdim, self.ydim, self.zdim))
 		self.direction = np.zeros((self.xdim, self.ydim, self.zdim))
+		self.density = 0.25
 
 	def set_flow(self, x, y, z, mag, angle):
 		if not self.__check_validity__(x, y, z):
@@ -67,12 +71,5 @@ class FlowField3DPlanar:
 			print("WARNING: division by zero. Returning mag 0 dir 0")
 		k1 = 1 - dz1 / dz
 		k2 = 1 - dz2 / dz
-		interp_mag, interp_angle = self.__vector_sum__(k1 * z1mag, z1angle, k2 * z2mag, z2angle)
+		interp_mag, interp_angle = vector_sum(k1 * z1mag, z1angle, k2 * z2mag, z2angle)
 		return interp_mag, interp_angle
-
-	def __vector_sum__(self, mag1, dir1, mag2, dir2):
-		xcomp = mag1 * np.cos(dir1) + mag2 * np.cos(dir2)
-		ycomp = mag1 * np.sin(dir1) + mag2 * np.sin(dir2)
-		mag = np.sqrt(xcomp**2 + ycomp**2)
-		angle = np.arctan2(ycomp, xcomp)
-		return mag, angle

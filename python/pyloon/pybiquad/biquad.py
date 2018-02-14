@@ -1,56 +1,42 @@
 import numpy as np
 
+import os, sys, inspect
+sys.path.insert(1, os.path.join(sys.path[0],'..'))
+
+from pyutils.pyutils import parsekw, hash3d, hash4d, rng
+
 class Biquad:
     # __init__()
     # Master init function (gets called with every object instantiation).
     # Type of initialization is implied by the kwargs. If conflicting
     # initializations are detected, the default initialization is used.
     def __init__(self, *args, **kwargs):
-        self.a = np.zeros(3) # denominator coefficients
-        self.b = np.zeros(3) # numerator coefficients
-        self.w = np.zeros(3) # delay registers
+        # Set flags indicating which kwargs were provided
+        num = parsekw(kwargs, 'num', None)
+        den = parsekw(kwargs, 'den', None)
+        ic = parsekw(kwargs, 'ic', None)
+        Fs = parsekw(kwargs, 'Fs', None)
+        p = parsekw(kwargs, 'p', None)
+        i = parsekw(kwargs, 'i', None)
+        d = parsekw(kwargs, 'd', None)
+        Fc = parsekw(kwargs, 'Fc', None)
+        Q = parsekw(kwargs, 'Q', None)
+        initialization = parsekw(kwargs, 'initialization', 'default')
+
         self.y = 0           # output
         self.n = 3           # length of coefficient vectors
-        self.Ts = 1          # sampling rate
-
-        # Set flags indicating which kwargs were provided
-        num = kwargs.get('num') != None
-        den = kwargs.get('den') != None
-        ic = kwargs.get('ic') != None
-        Fs = kwargs.get('Fs') != None
-        p = kwargs.get('p') != None
-        i = kwargs.get('i') != None
-        d = kwargs.get('d') != None
-        Fc = kwargs.get('Fc') != None
-        Q = kwargs.get('Q') != None
-
-        # Determine initialization flavor
-        standard = num or den or ic
-        pid = p or i or d
-        bilinear = Fs and (Fc or Q)
-        default = False
-
-        # Detect whether multiple flavors are requested
-        neopolitan = (standard and pid) or (standard and bilinear) or (bilinear and pid)
-        if neopolitan:
-            print("WARNING: multiple initialization methods requested. Initializing with defaults.\n")
-            default = True
 
         # Initialize based on the implied initialization method
-        if default:
-            self.__init_default__()
-        elif standard:
-            self.__init_standard__(num=kwargs.get('num'), den=kwargs.get('den'), ic=kwargs.get('ic'))
-        elif pid:
-            self.__init_pid__(p=kwargs.get('p'), i=kwargs.get('i'), d=kwargs.get('d'), Fs=kwargs.get('Fs'))
-        elif bilinear:
-            self.__init_bilinear__(Fs=kwargs.get('Fs'), Fc=kwargs.get('Fc'), Q=kwargs.get('Q'))
-
-        # Set sampling rate
-        if Fs:
-            self.set_sampling_rate(kwargs.get('Fs'))
+        if initialization == 'standard':
+            self.__init_standard__(num=num, den=den, ic=ic, Fs=Fs)
+        elif initialization == 'pid':
+            self.__init_pid__(p=p, i=i, d=d, Fs=Fs)
+        elif initialization == 'bilinear':
+            self.__init_bilinear__(Fs=Fs, Fc=Fc, Q=Q)
         else:
-            self.set_sampling_rate(1.0)
+            self.__init_default__()
+
+        self.Ts = 1.0 / self.Fs
 
         # Normalize coefficients
         self.__normalize__()
@@ -87,6 +73,7 @@ class Biquad:
         self.a = np.zeros(self.n)
         self.b = np.zeros(self.n)
         self.w = np.zeros(self.n)
+        self.Fs = 1.0
 
     # __init_standard__()
     # Initializes biquad filter from vectors of coefficients, initial
@@ -97,15 +84,15 @@ class Biquad:
     # @param Fs sampling rate in Hz (default: 1 Hz)
     def __init_standard__(self, *args, **kwargs):
 		# Set flags indicating which kwargs were provided
-        num = kwargs.get('num') != None
-        den = kwargs.get('den') != None
-        ic = kwargs.get('ic') != None
-        Fs = kwargs.get('Fs') != None
+        num = kwargs.get('num', np.zeros(self.n))
+        den = parsekw(kwargs, 'den', np.zeros(self.n))
+        ic = parsekw(kwargs, 'ic', np.zeros(self.n))
+        Fs = parsekw(kwargs, 'Fs', 1.0)
 
-        # Set coefficients and initial conditions
-        self.a = kwargs.get('num') if num else np.zeros(self.n)
-        self.b = kwargs.get('den') if den else np.zeros(self.n)
-        self.w = kwargs.get('ic') if ic else np.zeros(self.n)
+        self.a = den
+        self.b = num
+        self.w = ic
+        self.Fs = Fs
 
     # __init_pid__()
     # from: https://portal.ku.edu.tr/~cbasdogan/Courses/Robotics/projects/Discrete_PID.pdf
@@ -116,17 +103,14 @@ class Biquad:
     # @param Fs sampling rate (default: 1 Hz)
     def __init_pid__(self, *args, **kwargs):
 		# Set flags indicating which kwargs were provided
-        p = kwargs.get('p') != None
-        i = kwargs.get('i') != None
-        d = kwargs.get('d') != None
-        Fs = kwargs.get('Fs') != None
-
-        # Extract gains and sampling rate
-        kp = kwargs.get('p') if p else 0.0
-        ki = kwargs.get('i') if i else 0.0
-        kd = kwargs.get('d') if d else 0.0
-        Ts = 1.0 / kwargs.get('Fs') if Fs else 1.0
-
+        self.__init_default__()
+        kp = parsekw(kwargs, 'p', 0.0)
+        ki = parsekw(kwargs, 'i', 0.0)
+        kd = parsekw(kwargs, 'd', 0.0)
+        Fs = parsekw(kwargs, 'Fs', 1.0)
+        self.Fs = Fs
+        Ts = 1.0 / self.Fs
+        
         # Generate coefficients from gains and sampling rate
         self.b[0] = kp + ki * Ts / 2 + kd / Ts
         self.b[1] = -kp + ki * Ts / 2 - 2 * kd / Ts
@@ -140,35 +124,18 @@ class Biquad:
     # Fs = sampling rate in Hz
     def __init_bilinear__(self, *args, **kwargs):
 		# Set flags indicating which kwargs were provided
-        Fc = kwargs.get('Fc') != None
-        Q = kwargs.get('Q') != None
-        Fs = kwargs.get('Fs') != None
-
-        # Extract parameters
-        omega_s = kwargs.get('Fs') if Fs else 1.0   # Sampling rate in Hz       [default: 1 Hz]
-        omega_c = kwargs.get('Fc') if Fc else 1.0   # Corner frequency in Hz    [default: 1 Hz]
-        _Q = kwargs.get('Q') if Q else 1.0          #
+        Fc = parsekw(kwargs, 'Fc', 1.0)
+        Q = parsekw(kwargs, 'Q', 1.0)
+        Fs = parsekw(kwargs, 'Fs', 1.0)
 
         # Generate coefficients from sampling rate, corner frequency, and Q
-        K = np.tan(np.pi * omega_c / omega_s)
+        K = np.tan(np.pi * Fc / Fs)
         self.b[0] = K**2
         self.b[1] = 2 * self.b[0]
         self.b[2] = self.b[0]
-        self.a[0] = K**2 + K / _Q + 1
+        self.a[0] = K**2 + K / Q + 1
         self.a[1] = 2 * (K**2 - 1)
-        self.a[2] = K**2 - K / _Q + 1
-
-    # set_sampling_rate()
-    # If the desired sampling rate is valid, the object's sampling
-    # is updated accordingly.
-    # @param Fs desired sampling rate in Hz
-    # @return success/failure
-    def set_sampling_rate(self, Fs):
-        if Fs <= 0:
-            print("WARNING in set_sampling_rate(): sampling rate must be positive. No action taken.\n")
-            return False
-        self.Ts = 1.0 / Fs
-        return True
+        self.a[2] = K**2 - K / Q + 1
 
     # update()
     # from: https://en.wikipedia.org/wiki/Digital_biquad_filter
@@ -189,34 +156,21 @@ class Biquad:
     def get_curr_val(self):
         return self.y
 
-class Integrator:
+class Integrator(Biquad):
     def __init__(self, *args, **kwargs):
 		# Set flags indicating which kwargs were provided
-        ki = kwargs.get('i') != None
-        Fs = kwargs.get('Fs') != None
-
-        k = kwargs.get('i') if ki else 1.0
-        f = kwargs.get('Fs') if Fs else 1.0
-
-        self.H = Biquad(i=k, Fs=f)
-
-    def update(self, x):
-        return self.H.update(x)
-
-    def get_curr_val(self):
-        return self.H.get_curr_val()
+        ki = parsekw(kwargs, 'i', 1.0)
+        Fs = parsekw(kwargs, 'Fs', 1.0)
+        Biquad.__init__(self, i=ki, Fs=Fs, initialization='pid')
 
 class DoubleIntegrator:
     def __init__(self, *args, **kwargs):
 		# Set flags indicating which kwargs were provided
-        ki = kwargs.get('i') != None
-        Fs = kwargs.get('Fs') != None
+        ki = parsekw(kwargs, 'i', 1.0)
+        Fs = parsekw(kwargs, 'Fs', 1.0)
 
-        k = kwargs.get('i') if ki else 1.0
-        f = kwargs.get('Fs') if Fs else 1.0
-
-        self.H1 = Biquad(i=k, Fs=f)
-        self.H2 = Biquad(i=1.0, Fs=f)
+        self.H1 = Integratot(i=ki, Fs=Fs)
+        self.H2 = Integrator(i=1.0, Fs=Fs)
 
     def update(self, x):
         return self.H2.update(self.H1.update(x))
