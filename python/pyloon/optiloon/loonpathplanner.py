@@ -75,7 +75,7 @@ class LoonPathPlanner:
             prev_p = self.backedges[hash3d(p)][0]
             curr_w = self.backedges[hash3d(p)][2]
         else:
-            curr_w = np.linalg.norm(np.subtract(pstar[0:2],p[0:2]))
+            curr_w = self.__cost__(p, pstar)
         if prev_p in self.values:
             prev_w = self.values[prev_p]
         self.values[hash3d(p)] = curr_w + prev_w
@@ -85,6 +85,9 @@ class LoonPathPlanner:
         val = self.values[hash3d(p)]
         self.leaves = np.append(self.leaves, [[p[0], p[1], p[2], val]], axis=0)
         return True
+
+    def __cost__(self, p, pstar):
+        return np.linalg.norm(np.subtract(p[0:2],pstar[0:2]))
 
     def __climb_branch__(self, loon, u, pstar, depth):
         working_loon = copy.deepcopy(loon)
@@ -97,7 +100,7 @@ class LoonPathPlanner:
             vwind_y = expected_value[0] * np.sin(expected_value[1])
             # vl = np.subtract(vwind, working_loon.get_vel())
             # Update positions based on predicted drag force with random disturbances
-            lp = working_loon.update(   vz=u,
+            lp = working_loon.update(   vz=u + rng(1e-3),
                                         vx=vwind_x,
                                         vy=vwind_y)
                                         # fx=self.__drag_force__(working_loon, vl[0][0]) + rng(c_noise),
@@ -105,7 +108,7 @@ class LoonPathPlanner:
                                         # fz=self.__drag_force__(working_loon, 0) + rng(c_noise))
 
             # Calculate weights of these edges
-            w += np.linalg.norm(np.subtract(lp[0:2],pstar[0:2]))
+            w += self.__cost__(lp, pstar)
 
         x, y, z = loon.get_pos()
         wlx, wly, wlz = working_loon.get_pos()

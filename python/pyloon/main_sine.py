@@ -11,7 +11,14 @@ duration = 6
 
 # Set up flow field
 file = "./weather-data/oak_2017_07_01_00z.txt"
-LS = LoonSim(file=file, Fs=hz, xi=0, yi=0, zi=15000)
+LS = LoonSim(	zmin=0.0,
+			 	zmax=30000.0,
+				resolution=100,
+				frequency=2.0*np.pi/2000.0,
+				amplitude=30.0,
+				phase=0.0,
+				offset=0.0,
+				Fs=hz, xi=10000, yi=10000, zi=20500)
 
 # Set point
 pstar = [0.0, 0.0, 15000.0]

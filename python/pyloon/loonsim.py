@@ -58,7 +58,7 @@ class LoonSim:
 		vx = magnitude * cos(direction)
 		vy = magnitude * sin(direction)
 		vz = u
-		self.loon.update(fx=fx, fy=fy, vx=vx, vy=vy, vz=vz)
+		self.loon.update(fx=fx, fy=fy, vx=vx+rng(0), vy=vy, vz=vz+rng(0))
 		self.tcurr += self.dt
 		loon_pos = DataFrame([[self.tcurr, self.loon.x, self.loon.y, self.loon.z]], columns=['t','x','y','z'])
 		self.loon_history = self.loon_history.append(loon_pos, ignore_index=True)

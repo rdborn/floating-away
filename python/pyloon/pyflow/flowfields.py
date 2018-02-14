@@ -4,7 +4,7 @@ import pandas as pd
 import os, sys, inspect
 sys.path.insert(1, os.path.join(sys.path[0],'..'))
 
-from pyutils.pyutils import parsekw, hash3d, warning, compare, vector_sum
+from pyutils.pyutils import parsekw, hash3d, warning, compare, vector_sum, rng
 from pyutils.constants import M_2_KM, DEG_2_RAD, KNT_2_MPS
 from skewt import SkewT
 
@@ -59,7 +59,7 @@ class FlowField:
 			return warning("No point specified. Cannot get flow.")
 		if not self.__check_validity__(p):
 			return warning("Invalid point. Cannot get flow.")
-		relative_p = np.subtract(np.array(p), np.array(self.coords.values()))
+		relative_p = np.subtract(np.array(p + rng(1e-3)), np.array(self.coords.values()))
 		distances = np.sum(np.abs(relative_p)**2, axis=-1)**(1./2)
 		z = np.zeros([n,len(self.coords.values()[0])])
 		n_smallest = pd.Series(distances).nsmallest(n)
@@ -113,6 +113,7 @@ class PlanarField(FlowField):
 			return p2mag, p2angle
 		if dp == 0:
 			print("WARNING: division by zero. Returning mag 0 dir 0")
+			return 0, 0
 		k1 = 1 - dp1 / dp
 		k2 = 1 - dp2 / dp
 		interp_mag, interp_angle = vector_sum(k1 * p1mag, p1dir, k2 * p2mag, p2dir)
