@@ -12,21 +12,12 @@ from pyutils.pyutils import parsekw, hash3d, hash4d, rng, downsize
 class LoonPathPlanner:
     def __init__(self, *args, **kwargs):
         field = parsekw(kwargs, 'field', 0.0) # wind field object
-        res = parsekw(kwargs, 'res', 100)     # grid resolution in m
         lower = parsekw(kwargs, 'lo', 0.0)
         upper = parsekw(kwargs, 'hi', 100)
-        self.sounding = parsekw(kwargs, 'sounding', False)
-        self.nodes = dict()
-        self.edges = dict()
-        self.backedges = dict()
-        self.values = dict()
-        self.leaves = np.array([[np.inf, np.inf, np.inf, np.inf]])
-        self.branch_length = 180 # seconds
-        self.retrain(field=field, res=res, lower=lower, upper=upper)
+        self.retrain(field=field, lower=lower, upper=upper)
 
     def retrain(self, *args, **kwargs):
         field = parsekw(kwargs, 'field', 0.0) # wind field object
-        res = parsekw(kwargs, 'res', 100)     # grid resolution in m
         lower = parsekw(kwargs, 'lower', 0.0)
         upper = parsekw(kwargs, 'upper', 100)
 
@@ -63,31 +54,34 @@ class LoonPathPlanner:
         mean_fy = self.GPy.predict(np.atleast_2d(np.array(p)[self.mask]), return_std=False)
         return mean_fx, mean_fy
 
-    def __add_node__(self, p, loon):
-        self.nodes[hash3d(p)] = copy.deepcopy(loon)
-        return True
-
-    def __add_cost__(self, p, pstar):
-        prev_p = 0
-        prev_w = 0
-        curr_w = 0
-        if hash3d(p) in self.backedges:
-            prev_p = self.backedges[hash3d(p)][0]
-            curr_w = self.backedges[hash3d(p)][2]
-        else:
-            curr_w = self.__cost__(p, pstar)
-        if prev_p in self.values:
-            prev_w = self.values[prev_p]
-        self.values[hash3d(p)] = curr_w + prev_w
-        return True
-
-    def __add_leaf__(self, p):
-        val = self.values[hash3d(p)]
-        self.leaves = np.append(self.leaves, [[p[0], p[1], p[2], val]], axis=0)
-        return True
-
     def __cost__(self, p, pstar):
         return np.linalg.norm(np.subtract(p[0:2],pstar[0:2]))
+
+    def __reset__(self):
+        self.nodes = dict()
+        self.edges = dict()
+        self.backedges = dict()
+        self.values = dict()
+        self.leaves = np.array([[np.inf, np.inf, np.inf, np.inf]])
+        return True
+
+    # TODO: change to be wind-relative velocity
+    def __drag_force__(self, loon, v):
+        rho = 0.25 # air density
+        return v * abs(v) * rho * loon.A * loon.Cd / 2
+
+class MonteCarloPlanner(LoonPathPlanner):
+    def __init__(self, *args, **kwargs):
+        self.nodes = dict()
+        self.edges = dict()
+        self.backedges = dict()
+        self.values = dict()
+        self.leaves = np.array([[np.inf, np.inf, np.inf, np.inf]])
+        self.branch_length = 180 # seconds
+        LoonPathPlanner.__init__(   self,
+                                    field=kwargs.get('field'),
+                                    lo=kwargs.get('lo'),
+                                    hi=kwargs.get('hi'))
 
     def __climb_branch__(self, loon, u, pstar, depth):
         working_loon = copy.deepcopy(loon)
@@ -117,9 +111,10 @@ class LoonPathPlanner:
 
         self.__montecarlo__(working_loon, pstar, depth)
 
-    def montecarlo(self, loon, pstar, depth):
+    def plan(self, loon, pstar, depth):
         self.__reset__()
         self.__montecarlo__(loon, pstar, depth)
+        return self.__policy__()
 
     def __montecarlo__(self, loon, pstar, depth):
         # Add this node and get its value
@@ -137,7 +132,7 @@ class LoonPathPlanner:
         self.__climb_branch__(loon, 0, pstar, depth-1)
         self.__climb_branch__(loon, -u, pstar, depth-1)
 
-    def policy(self):
+    def __policy__(self):
         minval = np.inf
         for leaf in self.leaves:
             if leaf[3] < minval:
@@ -150,15 +145,106 @@ class LoonPathPlanner:
             p = self.backedges[p][0]
         return pol
 
-    def __reset__(self):
-        self.nodes = dict()
-        self.edges = dict()
-        self.backedges = dict()
-        self.values = dict()
-        self.leaves = np.array([[np.inf, np.inf, np.inf, np.inf]])
+    def __add_node__(self, p, loon):
+        self.nodes[hash3d(p)] = copy.deepcopy(loon)
         return True
 
-    # TODO: change to be wind-relative velocity
-    def __drag_force__(self, loon, v):
-        rho = 0.25 # air density
-        return v * abs(v) * rho * loon.A * loon.Cd / 2
+    def __add_cost__(self, p, pstar):
+        prev_p = 0
+        prev_w = 0
+        curr_w = 0
+        if hash3d(p) in self.backedges:
+            prev_p = self.backedges[hash3d(p)][0]
+            curr_w = self.backedges[hash3d(p)][2]
+        else:
+            curr_w = self.__cost__(p, pstar)
+        if prev_p in self.values:
+            prev_w = self.values[prev_p]
+        self.values[hash3d(p)] = curr_w + prev_w
+        return True
+
+    def __add_leaf__(self, p):
+        val = self.values[hash3d(p)]
+        self.leaves = np.append(self.leaves, [[p[0], p[1], p[2], val]], axis=0)
+        return True
+
+class PlantInvertingController(LoonPathPlanner):
+    def plan(self, *args, **kwargs):
+        loon = parsekw(kwargs, 'loon', None)
+        p = np.array(loon.get_pos())
+        if loon == None:
+            warning("Must specify loon.")
+        J_x = self.__differentiate_gp__(self.GPx, p[2])
+        J_y = self.__differentiate_gp__(self.GPy, p[2])
+        # f_x, f_y, trash, trash = LoonPathPlanner.predict(self, p=p)
+        J = np.array([J_x, J_y])
+        x = p[0:2]
+        num = np.inner(J, -x / np.inner(x, x))
+        den = np.inner(J,J)
+        u = 1000.0 * num / den
+        print("u: " + str(u))
+        u = u if not np.isnan(u) else 0
+        u = u if u < 5.0 else 5.0
+        u = u if u > -5.0 else -5.0
+        return u
+
+    def __kstar_gp__(self, GP, xstar):
+        x = GP.X_train_
+        theta = np.exp(GP.kernel_.theta)
+        C1 = theta[0]
+        L1 = theta[1]
+        C2 = theta[2]
+        L2 = theta[3]
+        Kstar1 =  C1 * np.exp(-((x - xstar)**2) / (2 * L1**2))
+        Kstar2 =  C2 * np.exp(-((x - xstar)**2) / (2 * L2**2))
+        return Kstar1, Kstar2
+
+    def __recreate_gp__(self, GP):
+        theta = np.exp(GP.kernel_.theta)
+        C1 = theta[0]
+        L1 = theta[1]
+        C2 = theta[2]
+        L2 = theta[3]
+        sigma = theta[4]
+        x = GP.X_train_
+        y = GP.y_train_
+        K1 = np.zeros([len(x),len(x)])
+        K2 = np.zeros([len(x),len(x)])
+        for i in range(len(x)):
+            for j in range(len(x)):
+                K1[i,j] = C1 * np.exp(-((x[i] - x[j])**2) / (2 * L1**2))
+                K2[i,j] = C2 * np.exp(-((x[i] - x[j])**2) / (2 * L2**2))
+        M = np.dot(np.linalg.inv(K1) + np.linalg.inv(K2) + np.eye(len(x))*sigma, y)
+        return K1, K2
+
+    def __differentiate_gp__(self, GP, xstar):
+        K1, K2 = self.__recreate_gp__(GP)
+        y = GP.y_train_
+        theta = np.exp(GP.kernel_.theta)
+        M1 = np.dot(np.linalg.inv(K1),y)
+        M2 = np.dot(np.linalg.inv(K2),y)
+        Kstar1, Kstar2 = self.__kstar_gp__(GP, xstar)
+        print(np.dot(Kstar1.T,M1)+np.dot(Kstar2.T,M2))
+        print(GP.predict(xstar))
+        L1 = theta[1]
+        L2 = theta[3]
+        x = GP.X_train_
+        dkdx =  np.dot(-((xstar - x) / L1**2).T, Kstar1*M1) + \
+                np.dot(-((xstar - x) / L2**2).T, Kstar2*M2)
+        return np.squeeze(dkdx)
+
+# class WindAwarePlanner(LoonPathPlanner):
+#     def plan(self, loon, pstar):
+#         z_test = np.linspace(0, 30000, 100)
+#         fx_test = self.GPx.predict(z_test)
+#         fy_test = self.GPy.predict(z_test)
+#         theta = np.arctan2(fy_test, fx_test)
+#         p = loon.get_pos()
+#         phi = np.arctan2((p[1] - pstar[1]), (p[0] - pstar[0]))
+#         candidates = np.cos(phi - theta)
+#         idx = (candidates == np.min(candidates))
+#         target = z_test[idx]
+#         print("Target altitude: " + str(target))
+#         print("Direction at target: " + str(theta[idx] * 180.0 / np.pi))
+#         print("Desired direction: " + str(phi * 180.0 / np.pi))
+#         return target

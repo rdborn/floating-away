@@ -12,48 +12,39 @@ duration = 6
 
 # Set up flow field
 file = "./weather-data/oak_2017_07_01_00z.txt"
-LS = LoonSim(file=file, Fs=hz, xi=0, yi=0, zi=15000)
+LS = LoonSim(	zmin=0.0,
+			 	zmax=30000.0,
+				resolution=100,
+				frequency=2.0*np.pi/2000.0,
+				amplitude=30.0,
+				phase=0.0,
+				offset=0.0,
+				Fs=hz, xi=10000, yi=10000, zi=20500)
 
 # Set point
-pstar = [0.0, 0.0, 15000.0]
+pstar = [0.0, 0.0, 13000.0]
 
 last_pos = LS.loon.get_pos()
 pos = last_pos
 lo = LS.loon.z - 5
 hi = LS.loon.z + 5
-LPP = MCP(field=LS.field, res=3, lo=10000, hi=30000, sounding=True)
+LPP = PIC(field=LS.field, res=3, lo=10000, hi=30000)
 thresh = 3
 
 # Simulation
 i = 0
 while(True):
 	i += 1
-	print("Monte carlo numba: " + str(i))
 
-	# Set up and train path planner
-	# TODO: reuse the same path planner for as long as possible
-	# if np.linalg.norm(np.subtract(pos, last_pos)) > thresh:
-	# 	lo = LS.loon.z - 10
-	# 	hi = LS.loon.z + 10
-	# 	LPP = LoonPathPlanner(field=LS.field, res=3, lo=lo, hi=hi, sounding=True)
-
-	# Monte Carlo through the wind field using our path planner
-	depth = 4
-	pol = LPP.plan(LS.loon, pstar, depth)
+	pol = LPP.plan(loon=LS.loon)
 
 	# Implement the first steps of the optimal policy
-	N = 2; # number of steps to take
-	for j in range(N):
-		print("Control effort: " + str(pol[-j-1]))
-		for t in range(np.int(np.ceil(LPP.branch_length*LS.Fs))):
-			LS.propogate(pol[-j-1]) # move the balloon along
+	N = 1; # number of steps to take
+	print("Control effort: " + str(pol))
+	LS.propogate(pol) # move the balloon along
 	pos = LS.loon.get_pos() # get balloon's position
 	LS.plot()
 	print(pos)
-
-while(True):
-	plt.pause(0.05)
-
 
 ########################################
 # PLOTTING
