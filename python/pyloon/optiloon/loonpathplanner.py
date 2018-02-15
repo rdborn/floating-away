@@ -233,18 +233,18 @@ class PlantInvertingController(LoonPathPlanner):
                 np.dot(-((xstar - x) / L2**2).T, Kstar2*M2)
         return np.squeeze(dkdx)
 
-# class WindAwarePlanner(LoonPathPlanner):
-#     def plan(self, loon, pstar):
-#         z_test = np.linspace(0, 30000, 100)
-#         fx_test = self.GPx.predict(z_test)
-#         fy_test = self.GPy.predict(z_test)
-#         theta = np.arctan2(fy_test, fx_test)
-#         p = loon.get_pos()
-#         phi = np.arctan2((p[1] - pstar[1]), (p[0] - pstar[0]))
-#         candidates = np.cos(phi - theta)
-#         idx = (candidates == np.min(candidates))
-#         target = z_test[idx]
-#         print("Target altitude: " + str(target))
-#         print("Direction at target: " + str(theta[idx] * 180.0 / np.pi))
-#         print("Desired direction: " + str(phi * 180.0 / np.pi))
-#         return target
+class WindAwarePlanner(LoonPathPlanner):
+    def plan(self, loon, pstar):
+        z_test = np.linspace(0, 30000, 100)
+        fx_test = self.GPx.predict(z_test)
+        fy_test = self.GPy.predict(z_test)
+        theta = np.arctan2(fy_test, fx_test)
+        p = loon.get_pos()
+        phi = np.arctan2((p[1] - pstar[1]), (p[0] - pstar[0]))
+        candidates = np.cos(phi - theta)
+        idx = (candidates == np.min(candidates))
+        target = z_test[idx]
+        print("Target altitude: " + str(target))
+        print("Direction at target: " + str(theta[idx] * 180.0 / np.pi))
+        print("Desired direction: " + str(phi * 180.0 / np.pi))
+        return target
