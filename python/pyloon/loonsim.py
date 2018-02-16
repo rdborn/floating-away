@@ -58,6 +58,8 @@ class LoonSim:
 		vx = magnitude * cos(direction)
 		vy = magnitude * sin(direction)
 		vz = u
+		print("vx: " + str(vx))
+		print("vy: " + str(vy))
 		self.loon.update(fx=fx, fy=fy, vx=vx+rng(0), vy=vy, vz=vz+rng(0))
 		self.tcurr += self.dt
 		loon_pos = DataFrame([[self.tcurr, self.loon.x, self.loon.y, self.loon.z]], columns=['t','x','y','z'])
@@ -72,3 +74,10 @@ class LoonSim:
 									self.loon_history['z'][self.prev_plot_idx:])
 		self.prev_plot_idx = len(self.loon_history['x']) - 1
 		plt.pause(0.0001)
+
+	def sample(self):
+		p = self.loon.get_pos()
+		magnitude, direction = self.field.get_flow(p=p)
+		self.field.set_planar_flow(	z=p[2],
+									magnitude=magnitude,
+									direction=direction)

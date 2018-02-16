@@ -181,7 +181,7 @@ class PlantInvertingController(LoonPathPlanner):
         x = p[0:2]
         num = np.inner(J, -x / np.inner(x, x))
         den = np.inner(J,J)
-        u = 1000.0 * num / den
+        u = 10000.0 * num / den
         print("u: " + str(u))
         u = u if not np.isnan(u) else 0
         u = u if u < 5.0 else 5.0
@@ -233,18 +233,53 @@ class PlantInvertingController(LoonPathPlanner):
                 np.dot(-((xstar - x) / L2**2).T, Kstar2*M2)
         return np.squeeze(dkdx)
 
-# class WindAwarePlanner(LoonPathPlanner):
-#     def plan(self, loon, pstar):
-#         z_test = np.linspace(0, 30000, 100)
-#         fx_test = self.GPx.predict(z_test)
-#         fy_test = self.GPy.predict(z_test)
-#         theta = np.arctan2(fy_test, fx_test)
-#         p = loon.get_pos()
-#         phi = np.arctan2((p[1] - pstar[1]), (p[0] - pstar[0]))
-#         candidates = np.cos(phi - theta)
-#         idx = (candidates == np.min(candidates))
-#         target = z_test[idx]
-#         print("Target altitude: " + str(target))
-#         print("Direction at target: " + str(theta[idx] * 180.0 / np.pi))
-#         print("Desired direction: " + str(phi * 180.0 / np.pi))
-#         return target
+class WindAwarePlanner(LoonPathPlanner):
+    def plan(self, loon, pstar):
+        z_test = np.linspace(10000, 30000, 100)
+        theta = self.__wind_dir__(z_test)
+        phi = self.__desired_dir__(loon, pstar)
+        candidates = self.__smooth__(phi, theta)
+        target = self.__min_climb__(loon, z_test, candidates)
+        print("Target altitude: " + str(target))
+        print("Direction at target: " + str(theta[z_test == target] * 180.0 / np.pi))
+        print("Desired direction: " + str(phi * 180.0 / np.pi - 180.0))
+        return target
+
+    def __smooth__(self, phi, theta):
+        candidates = np.zeros(len(theta))
+        for i in range(len(candidates)):
+            avg_candidate = np.cos(phi - theta[i])
+            n = 5
+            for j in range(n):
+                if i+j < len(theta):
+                    avg_candidate += np.cos(phi - theta[i+j])
+                if i-j >= 0:
+                    avg_candidate += np.cos(phi - theta[i-j])
+            avg_candidate = avg_candidate / (2*n+1)
+            candidates[i] = avg_candidate
+        return candidates
+
+    def __min_climb__(self, loon, z_test, candidates):
+        p = loon.get_pos()
+        idx = (candidates == np.min(candidates))
+        min_climb = np.inf
+        min_climb_idx = 0
+        for i in range(len(idx)):
+            flag = idx[i]
+            if flag:
+                climb = abs(p[2] - z_test[i])
+                if climb < min_climb:
+                    min_climb = climb
+                    min_climb_idx = i
+        return z_test[min_climb_idx]
+
+    def __desired_dir__(self, loon, pstar):
+        p = loon.get_pos()
+        phi = np.arctan2((p[1] - pstar[1]), (p[0] - pstar[0]))
+        return phi
+
+    def __wind_dir__(self, z_test):
+        vx_test = self.GPx.predict(np.atleast_2d(np.array(z_test)).T, return_std=False)
+        vy_test = self.GPy.predict(np.atleast_2d(np.array(z_test)).T, return_std=False)
+        theta = np.arctan2(vy_test, vx_test)
+        return theta
