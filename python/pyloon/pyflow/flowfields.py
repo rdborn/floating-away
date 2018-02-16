@@ -59,13 +59,30 @@ class FlowField:
 			return warning("No point specified. Cannot get flow.")
 		if not self.__check_validity__(p):
 			return warning("Invalid point. Cannot get flow.")
-		relative_p = np.subtract(np.array(p + rng(1e-3)), np.array(self.coords.values()))
-		distances = np.sum(np.abs(relative_p)**2, axis=-1)**(1./2)
-		z = np.zeros([n,len(self.coords.values()[0])])
-		n_smallest = pd.Series(distances).nsmallest(n)
-		for i in range(n):
-			z[i] = np.array(self.coords.values())[distances == n_smallest.iloc[i]]
-		return z
+		relative_p = np.subtract(np.array(p), np.array(self.coords.values()))
+		relative_z = relative_p[:,2]
+		idx_zero = (relative_z == 0)
+		idx_neg = (relative_z < 0)
+		idx_pos = (relative_z > 0)
+		if idx_zero.any():
+			z = np.array([	np.array(self.coords.values())[idx_zero],
+							np.array(self.coords.values())[idx_zero]])
+		else:
+			distances = np.sum(np.abs(relative_p)**2, axis=-1)**(1./2)
+			idx_next = (distances*idx_neg == np.min(distances[idx_neg]))
+			idx_prev = (distances*idx_pos == np.min(distances[idx_pos]))
+			if not idx_prev.any():
+				idx_prev = idx_next
+			if not idx_next.any():
+				idx_next = idx_prev
+			z = np.array([	np.array(self.coords.values())[idx_prev],
+							np.array(self.coords.values())[idx_next]])
+		# # Old (buggy) way:
+		# z = np.zeros([n,len(self.coords.values()[0])])
+		# n_smallest = pd.Series(distances).nsmallest(n)
+		# for i in range(n):
+		# 	z[i] = np.array(self.coords.values())[distances == n_smallest.iloc[i]]
+		return np.squeeze(z)
 
 class PlanarField(FlowField):
 	def __init__(self, *args, **kwargs):
@@ -108,12 +125,12 @@ class PlanarField(FlowField):
 		dp1 = np.linalg.norm(np.subtract(p1, p))
 		dp2 = np.linalg.norm(np.subtract(p2, p))
 		if dp1 < 1e-5:
-			return p1mag, p1angle
+			return p1mag, p1dir
 		if dp2 < 1e-5:
-			return p2mag, p2angle
-		if dp == 0:
-			print("WARNING: division by zero. Returning mag 0 dir 0")
-			return 0, 0
+			return p2mag, p2dir
+		if dp < 1e-5:
+			warning("Requested value outside bounds of reliable estimate.")
+			return p1mag, p1dir
 		k1 = 1 - dp1 / dp
 		k2 = 1 - dp2 / dp
 		interp_mag, interp_angle = vector_sum(k1 * p1mag, p1dir, k2 * p2mag, p2dir)

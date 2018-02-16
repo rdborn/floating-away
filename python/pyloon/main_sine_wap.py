@@ -27,23 +27,20 @@ pstar = [0.0, 0.0, 13000.0]
 
 last_pos = LS.loon.get_pos()
 pos = last_pos
-LPP = WAP(field=LS.field, res=3, lo=10000, hi=30000)
+LPP = WAP(field=LS.field, lo=10000, hi=30000)
 
 # Simulation
-i = 0
 while(True):
-	i += 1
-
-	pol = WAP.plan(loon=LS.loon)
-
-	# Implement the first steps of the optimal policy
-	N = 1; # number of steps to take
+	pol = LPP.plan(LS.loon, pstar)
 	pos = LS.loon.get_pos() # get balloon's position
-	u = 5 if pos[2] < pol else -5
-	while abs(pos[2] - pol) > 1:
-		LS.propogate(u) # move the balloon along
+	print(pol)
+	for i in range(1):
+		u = (pol - pos[2])
+		u = u if u < 5 else 5
+		u = u if u > -5 else -5
+		LS.propogate(u)
+		pos = LS.loon.get_pos()
 	LS.plot()
-	print(pos)
 
 ########################################
 # PLOTTING
@@ -57,11 +54,11 @@ while(True):
 
 # lo = 3.0
 # hi = 31000.0
-# LPP = LoonPathPlanner(field=LS.field, res=3, lo=lo, hi=hi, sounding=True)
-#
-# #z = np.linspace(0,zdim-1,1000)
-# sorted_keys = np.sort(LS.field.field.keys())
-# z = np.linspace(sorted_keys[0],sorted_keys[-1],2000)
+# # LPP = LoonPathPlanner(field=LS.field, res=3, lo=lo, hi=hi, sounding=True)
+# #
+# z = np.linspace(lo,hi,1000)
+# # sorted_keys = np.sort(LS.field.field.keys())
+# # z = np.linspace(sorted_keys[0],sorted_keys[-1],1000)
 # fx = np.zeros(len(z))
 # fx_actual = np.zeros(len(z))
 # fx_std = np.zeros(len(z))
@@ -69,14 +66,14 @@ while(True):
 # fy_actual = np.zeros(len(z))
 # fy_std = np.zeros(len(z))
 # for i in range(len(z)):
-# 	result = LPP.predict(z[i])
-# 	mag, angle = LS.field.get_flow([(lo+hi)/2.0,(lo+hi)/2.0,z[i]])
+# 	result = LPP.predict(np.array([0,0,z[i]]))
+# 	mag, angle = LS.field.get_flow(p=np.array([0,0,z[i]]))
 # 	fx[i] = result[0]
 # 	fx_actual[i] = mag * np.cos(angle) if abs(mag) < 50 else 0
-# 	fx_std[i] = result[3]
+# 	fx_std[i] = result[2]
 # 	fy[i] = result[1]
 # 	fy_actual[i] = mag * np.sin(angle) if abs(mag) < 50 else 0
-# 	fy_std[i] = result[4]
+# 	fy_std[i] = result[3]
 #
 # fig = plt.figure()
 # plt.plot(z, fx_actual, 'r:')
@@ -87,3 +84,6 @@ while(True):
 # plt.plot(z, fy, 'b-')
 # plt.fill(np.concatenate([z,z[::-1]]), np.concatenate([fy - 3*fy_std, (fy + 3*fy_std)[::-1]]), alpha=0.5, fc='b', ec='None')
 # plt.show()
+#
+# while(True):
+# 	plt.pause(0.05)

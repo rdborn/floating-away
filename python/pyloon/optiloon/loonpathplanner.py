@@ -181,7 +181,7 @@ class PlantInvertingController(LoonPathPlanner):
         x = p[0:2]
         num = np.inner(J, -x / np.inner(x, x))
         den = np.inner(J,J)
-        u = 1000.0 * num / den
+        u = 10000.0 * num / den
         print("u: " + str(u))
         u = u if not np.isnan(u) else 0
         u = u if u < 5.0 else 5.0
@@ -235,16 +235,45 @@ class PlantInvertingController(LoonPathPlanner):
 
 class WindAwarePlanner(LoonPathPlanner):
     def plan(self, loon, pstar):
-        z_test = np.linspace(0, 30000, 100)
-        fx_test = self.GPx.predict(z_test)
-        fy_test = self.GPy.predict(z_test)
-        theta = np.arctan2(fy_test, fx_test)
+        z_test = np.linspace(10000, 30000, 100)
+        vx_test = self.GPx.predict(np.atleast_2d(np.array(z_test)).T, return_std=False)
+        vy_test = self.GPy.predict(np.atleast_2d(np.array(z_test)).T, return_std=False)
+        theta = np.arctan2(vy_test, vx_test)
         p = loon.get_pos()
         phi = np.arctan2((p[1] - pstar[1]), (p[0] - pstar[0]))
-        candidates = np.cos(phi - theta)
+        candidates = np.zeros(len(theta))
+        for i in range(len(candidates)):
+            avg_candidate = np.cos(phi - theta[i])
+            n = 5
+            for j in range(n):
+                if i+j < len(theta):
+                    avg_candidate += np.cos(phi - theta[i+j])
+                if i-j >= 0:
+                    avg_candidate += np.cos(phi - theta[i-j])
+            avg_candidate = avg_candidate / (2*n+1)
+            candidates[i] = avg_candidate
         idx = (candidates == np.min(candidates))
-        target = z_test[idx]
+        print(np.min(candidates))
+        min_climb = np.inf
+        min_climb_idx = 0
+        for i in range(len(idx)):
+            flag = idx[i]
+            # for j in range(2):
+            #     if i-j > 0:
+            #         flag &= idx[i-j]
+            #     if i+j < len(idx)-1:
+            #         flag &= idx[i+j]
+            if flag:
+                climb = abs(p[2] - z_test[i])
+                if climb < min_climb:
+                    min_climb = climb
+                    min_climb_idx = i
+        target = z_test[min_climb_idx]
         print("Target altitude: " + str(target))
-        print("Direction at target: " + str(theta[idx] * 180.0 / np.pi))
-        print("Desired direction: " + str(phi * 180.0 / np.pi))
+        print("Direction at target: " + str(theta[min_climb_idx] * 180.0 / np.pi))
+        print("Desired direction: " + str(phi * 180.0 / np.pi - 180.0))
+        print("GPx target: " + str(self.GPx.predict(target, return_std=False)))
+        print("GPy target: " + str(self.GPy.predict(target, return_std=False)))
+        print("GPx p: " + str(self.GPx.predict(p[2], return_std=False)))
+        print("GPy p: " + str(self.GPy.predict(p[2], return_std=False)))
         return target

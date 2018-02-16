@@ -12,7 +12,8 @@ hz = 0.2
 duration = 6
 
 # Set up flow field
-file = "./weather-data/oak_2017_07_01_00z.txt"
+# file = "./weather-data/oak_2017_07_01_00z.txt"
+file = "./weather-data/oak_2018_02_08_00z.txt"
 LS = LoonSim(file=file, Fs=hz, xi=10000.0, yi=10000.0, zi=15000.0)
 
 # Set point
