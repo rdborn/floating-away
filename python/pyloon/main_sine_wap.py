@@ -12,7 +12,6 @@ hz = 0.2
 duration = 6
 
 # Set up flow field
-file = "./weather-data/oak_2017_07_01_00z.txt"
 LS = LoonSim(	zmin=0.0,
 			 	zmax=30000.0,
 				resolution=100,
@@ -34,7 +33,7 @@ while(True):
 	pol = LPP.plan(LS.loon, pstar)
 	pos = LS.loon.get_pos() # get balloon's position
 	print(pol)
-	for i in range(1):
+	for i in range(10):
 		u = (pol - pos[2])
 		u = u if u < 5 else 5
 		u = u if u > -5 else -5
