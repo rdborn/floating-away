@@ -258,11 +258,6 @@ class WindAwarePlanner(LoonPathPlanner):
         min_climb_idx = 0
         for i in range(len(idx)):
             flag = idx[i]
-            # for j in range(2):
-            #     if i-j > 0:
-            #         flag &= idx[i-j]
-            #     if i+j < len(idx)-1:
-            #         flag &= idx[i+j]
             if flag:
                 climb = abs(p[2] - z_test[i])
                 if climb < min_climb:

@@ -74,3 +74,10 @@ class LoonSim:
 									self.loon_history['z'][self.prev_plot_idx:])
 		self.prev_plot_idx = len(self.loon_history['x']) - 1
 		plt.pause(0.0001)
+
+	def sample(self):
+		p = self.loon.get_pos()
+		magnitude, direction = self.field.get_flow(p=p)
+		self.field.set_planar_flow(	z=p[2],
+									magnitude=magnitude,
+									direction=direction)
