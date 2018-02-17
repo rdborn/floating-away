@@ -2,6 +2,7 @@ from loonsim import LoonSim
 from optiloon.loonpathplanner import MonteCarloPlanner as MCP
 from optiloon.loonpathplanner import PlantInvertingController as PIC
 from optiloon.loonpathplanner import WindAwarePlanner as WAP
+from pyflow.pystreams import JetStreamIdentifier as JSI
 import numpy as np
 from pandas import DataFrame
 from matplotlib import pyplot as plt
@@ -16,7 +17,7 @@ duration = 6
 # Set up flow field
 file = "./weather-data/oak_2017_07_01_00z.txt"
 # file = "./weather-data/oak_2018_02_08_00z.txt"
-LS = LoonSim(file=file, Fs=hz, xi=10000.0, yi=10000.0, zi=15000.0)
+LS = LoonSim(file=file, Fs=hz, xi=10000.0, yi=10000.0, zi=15000.0, plot=False)
 
 # Set point
 pstar = [0.0, 0.0, 13000.0]

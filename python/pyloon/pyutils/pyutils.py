@@ -7,7 +7,7 @@ def compare(x1, x2):
     return comparison
 
 def parsekw(kwargs, kw, default):
-    return (kwargs.get(kw) if not any(compare(kwargs.get(kw), None)) else default)
+    return (kwargs.get(kw) if not (compare(kwargs.get(kw), None)).any() else default)
 
 def hash3d(p):
     P0 = 73856093
