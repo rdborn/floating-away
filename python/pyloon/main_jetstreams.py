@@ -15,16 +15,27 @@ hz = 0.2
 duration = 6
 
 # Set up flow field
-file = "./weather-data/oak_2017_07_01_00z.txt"
+# file = "./weather-data/oak_2017_07_01_00z.txt"
 # file = "./weather-data/oak_2018_02_08_00z.txt"
-LS = LoonSim(file=file, Fs=hz, xi=10000.0, yi=10000.0, zi=15000.0, plot=False)
+# LS = LoonSim(file=file, Fs=hz, xi=10000.0, yi=10000.0, zi=15000.0, plot=False)
+LS = LoonSim(	zmin=0.0,
+			 	zmax=30000.0,
+				resolution=100,
+				frequency=2.0*np.pi/2000.0,
+				amplitude=30.0,
+				phase=0.0,
+				offset=0.0,
+				Fs=hz, xi=10000, yi=10000, zi=20500,
+                plot=False)
 
 # Set point
 pstar = [0.0, 0.0, 13000.0]
 
 last_pos = LS.loon.get_pos()
 pos = last_pos
-LPP = WAP(field=LS.field, lo=10000, hi=30000)
+LPP = WAP(  field=LS.field,
+            lo=10000,
+            hi=30000)
 
 z = np.linspace(0,30000,500)
 vx = np.zeros(len(z))

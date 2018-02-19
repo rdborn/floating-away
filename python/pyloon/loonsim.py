@@ -58,8 +58,8 @@ class LoonSim:
 		vx = magnitude * cos(direction)
 		vy = magnitude * sin(direction)
 		vz = u
-		print("vx: " + str(vx))
-		print("vy: " + str(vy))
+		# print("vx: " + str(vx))
+		# print("vy: " + str(vy))
 		self.loon.update(fx=fx, fy=fy, vx=vx+rng(0), vy=vy, vz=vz+rng(0))
 		self.tcurr += self.dt
 		loon_pos = DataFrame([[self.tcurr, self.loon.x, self.loon.y, self.loon.z]], columns=['t','x','y','z'])

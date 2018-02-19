@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 from sklearn.gaussian_process import GaussianProcessRegressor as GPR
 from sklearn.gaussian_process.kernels import RBF, Matern, WhiteKernel, ConstantKernel as C
 import copy
@@ -8,6 +9,8 @@ sys.path.insert(1, os.path.join(sys.path[0],'..'))
 
 from pyloon.multiinputloon import MultiInputLoon as Loon
 from pyutils.pyutils import parsekw, hash3d, hash4d, rng, downsize
+from pyutils import pyutils
+from pyflow.pystreams import VarThresholdIdentifier as JSI
 
 class LoonPathPlanner:
     def __init__(self, *args, **kwargs):
@@ -15,6 +18,8 @@ class LoonPathPlanner:
         lower = parsekw(kwargs, 'lo', 0.0)
         upper = parsekw(kwargs, 'hi', 100)
         self.retrain(field=field, lower=lower, upper=upper)
+        self.lower = lower
+        self.upper = upper
 
     def retrain(self, *args, **kwargs):
         field = parsekw(kwargs, 'field', 0.0) # wind field object
@@ -234,15 +239,48 @@ class PlantInvertingController(LoonPathPlanner):
         return np.squeeze(dkdx)
 
 class WindAwarePlanner(LoonPathPlanner):
+    def __init__(self, *args, **kwargs):
+        LoonPathPlanner.__init__(   self,
+                                    field=kwargs.get('field'),
+                                    lo=kwargs.get('lo'),
+                                    hi=kwargs.get('hi'))
+        streamres = parsekw(kwargs, 'streamres', 500)
+        streammax = parsekw(kwargs, 'streammax', 0)
+        streammin = parsekw(kwargs, 'streammin', 30000)
+        threshold = parsekw(kwargs, 'threshold', 0.01)
+        streamsize = parsekw(kwargs, 'streamsize', 20)
+
+        alt = np.linspace(streammin, streammax, streamres)
+        streamdir = np.zeros(streamres)
+        streammag = np.zeros(streamres)
+        for i, z in enumerate(alt):
+        	vx, vy = self.ev(np.array([0, 0, z]))
+        	magnitude = np.sqrt(vx**2 + vy**2)
+        	direction = np.arctan2(vy, vx)
+        	streammag[i] = magnitude # magnitude * np.cos(direction)
+        	streamdir[i] = np.cos(direction) # magnitude * np.sin(direction)
+        # streamdir = pyutils.normalize(streamdir)
+        # streammag = pyutils.normalize(streammag)
+        # alt = pyutils.normalize(alt)
+        data = np.array([streammag, streamdir, alt]).T
+        self.jets = JSI(data=data, threshold=threshold, streamsize=streamsize)
+        # self.jets.plot()
+        # plt.show()
+        # while(True):
+        #     pass
+
     def plan(self, loon, pstar):
-        z_test = np.linspace(10000, 30000, 100)
-        theta = self.__wind_dir__(z_test)
+        vals = np.array(self.jets.jetstreams.values())
+        z_test = vals[:,0]
+        theta = np.arccos(vals[:,2])
+        # theta = self.__wind_dir__(z_test)
         phi = self.__desired_dir__(loon, pstar)
-        candidates = self.__smooth__(phi, theta)
+        candidates = np.cos(phi - theta)
+        # candidates = self.__smooth__(phi, theta)
         target = self.__min_climb__(loon, z_test, candidates)
         print("Target altitude: " + str(target))
-        print("Direction at target: " + str(theta[z_test == target] * 180.0 / np.pi))
-        print("Desired direction: " + str(phi * 180.0 / np.pi - 180.0))
+        print("Direction at target: " + str((theta[z_test == target] * 180.0 / np.pi) % 360))
+        print("Desired direction: " + str((phi * 180.0 / np.pi - 180.0) % 360))
         return target
 
     def __smooth__(self, phi, theta):
@@ -265,7 +303,7 @@ class WindAwarePlanner(LoonPathPlanner):
         min_climb = np.inf
         min_climb_idx = 0
         for i in range(len(idx)):
-            flag = idx[i]
+            flag = idx[i] and z_test[i] > self.lower and z_test[i] < self.upper
             if flag:
                 climb = abs(p[2] - z_test[i])
                 if climb < min_climb:

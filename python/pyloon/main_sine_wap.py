@@ -15,7 +15,7 @@ duration = 6
 LS = LoonSim(	zmin=0.0,
 			 	zmax=30000.0,
 				resolution=100,
-				frequency=2.0*np.pi/2000.0,
+				frequency=2.0*np.pi/8000.0,
 				amplitude=30.0,
 				phase=0.0,
 				offset=0.0,

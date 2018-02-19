@@ -130,11 +130,11 @@ class VarThresholdIdentifier(JetStreamIdentifier):
         cluster = []
         cluster_vals = []
         i = 0
-        for key in np.sort(self.data.keys()):
+        for i, key in enumerate(np.sort(self.data.keys())):
             val = self.data[key]
             mag_val = val[0]
             dir_val = val[1]
-            if np.var(np.append(cluster_vals,dir_val)) > threshold:
+            if np.var(np.append(cluster_vals,dir_val)) > threshold or i == len(self.data.keys())-1:
                 self.clusters[self.n_clusters] = np.array(cluster)
                 self.n_clusters += 1
                 cluster = [key]
@@ -174,10 +174,7 @@ class VarThresholdIdentifier(JetStreamIdentifier):
     def plot(self):
         print(self.n_clusters)
         f, (a1, a2, a3) = plt.subplots(1, 3, sharey=True)
-        lim = 1.1
         a1.scatter( self.cluster_labels[:,3], self.cluster_labels[:,0], c = self.cluster_labels[:,3]%9, cmap='Set1')
-        a1.scatter( self.stream_ids, 1.1*np.ones(len(self.stream_ids)))
+        a1.scatter( self.stream_ids, -100.0*np.ones(len(self.stream_ids)))
         a2.scatter( self.cluster_labels[:,2], self.cluster_labels[:,0], c = self.cluster_labels[:,3]%9, cmap='Set1')
         a3.scatter( self.cluster_labels[:,1], self.cluster_labels[:,0], c = self.cluster_labels[:,3]%9, cmap='Set1')
-        a2.set_xlim([-lim,lim])
-        a3.set_xlim([-lim,lim])

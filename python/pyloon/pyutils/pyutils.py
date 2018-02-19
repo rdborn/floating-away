@@ -44,3 +44,8 @@ def downsize(M):
         if all(mask):
             return mask
     return mask
+
+def normalize(x):
+    mu = np.mean(x)
+    sigma = np.sqrt(np.var(x))
+    return (x - mu) / sigma
