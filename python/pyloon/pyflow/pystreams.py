@@ -14,10 +14,6 @@ from pyutils.pyutils import parsekw, hash3d, hash4d, rng
 class JetStreamIdentifier:
     def __init__(self, *args, **kwargs):
         self.X = parsekw(kwargs, 'data', None)
-        self.B = parsekw(kwargs, 'B', 10)
-        n_clusters = self.__cluster__(kmax=kwargs.get('kmax'))
-        self.kmeans = KMeans(n_clusters=n_clusters).fit(self.X)
-        pass
 
     def __smooth__(self, i, w):
         xnew = np.zeros(len(self.X[:,i]))
@@ -32,6 +28,15 @@ class JetStreamIdentifier:
             xsmooth = xsmooth / (w + 1)
             xnew[j] = xsmooth
         self.X[:,i] = xnew
+
+class ClusterIdentifier(JetStreamIdentifier):
+    def __init__(self, *args, **kwargs):
+        JetStreamIdentifier.__init__(self, data=kwargs.get('data'))
+        self.B = parsekw(kwargs, 'B', 10)
+        self.__smooth__(1, 20)
+        n_clusters = self.__cluster__(kmax=kwargs.get('kmax'))
+        self.kmeans = KMeans(n_clusters=n_clusters).fit(self.X)
+        pass
 
     def streams(self):
         return self.kmeans.cluster_centers_
@@ -98,3 +103,81 @@ class JetStreamIdentifier:
         a2.scatter( self.X[:,1], self.X[:,2], c=self.kmeans.labels_)
         a2.set_xlim([-1.1,1.1])
         print(self.kmeans.labels_)
+
+class VarThresholdIdentifier(JetStreamIdentifier):
+    def __init__(self, *args, **kwargs):
+        threshold = parsekw(kwargs, 'threshold', 0.005)
+        streamsize = parsekw(kwargs, 'streamsize', 15)
+        JetStreamIdentifier.__init__(self, data=kwargs.get('data'))
+        self.__generate_dict__(2)
+        self.__cluster__(threshold)
+        self.__identify_streams__(streamsize)
+        self.__classify_streams__()
+
+    def __generate_dict__(self, key_idx):
+        self.data = dict()
+        for x in self.X:
+            val = []
+            for i in range(len(x)):
+                if i != key_idx:
+                    val = np.append(val, x[i])
+            self.data[x[key_idx]] = np.array(val)
+
+    def __cluster__(self, threshold):
+        self.clusters = dict()
+        self.cluster_labels = np.zeros([len(self.data.keys()),len(self.X[0])+1])
+        self.n_clusters = 0
+        cluster = []
+        cluster_vals = []
+        i = 0
+        for key in np.sort(self.data.keys()):
+            val = self.data[key]
+            mag_val = val[0]
+            dir_val = val[1]
+            if np.var(np.append(cluster_vals,dir_val)) > threshold:
+                self.clusters[self.n_clusters] = np.array(cluster)
+                self.n_clusters += 1
+                cluster = [key]
+                cluster_vals = [dir_val]
+            else:
+                cluster = np.append(cluster, key)
+                cluster_vals = np.append(cluster_vals, dir_val)
+            self.cluster_labels[i] = np.array([key, mag_val, dir_val, self.n_clusters])
+            i += 1
+
+    def __identify_streams__(self, streamsize):
+        jetstreams = []
+        for c in self.clusters.keys():
+            if len(self.clusters[c]) > streamsize:
+                jetstreams = np.append(jetstreams,c)
+        self.stream_ids = np.array(jetstreams)
+
+    def __classify_streams__(self):
+        alt_avgs = np.zeros(len(self.stream_ids))
+        mag_avgs = np.zeros(len(self.stream_ids))
+        dir_avgs = np.zeros(len(self.stream_ids))
+        n = np.zeros(len(self.stream_ids))
+        for x in self.cluster_labels:
+            idx = (self.stream_ids == x[3])
+            alt_avgs[idx] += x[0]
+            mag_avgs[idx] += x[1]
+            dir_avgs[idx] += x[2]
+            n += idx
+        alts = alt_avgs / n
+        mags = mag_avgs / n
+        dirs = dir_avgs / n
+        self.jetstreams = dict()
+        for stream in self.stream_ids:
+            idx = (self.stream_ids == stream)
+            self.jetstreams[stream] = np.array([alts[idx], mags[idx], dirs[idx]])
+
+    def plot(self):
+        print(self.n_clusters)
+        f, (a1, a2, a3) = plt.subplots(1, 3, sharey=True)
+        lim = 1.1
+        a1.scatter( self.cluster_labels[:,3], self.cluster_labels[:,0], c = self.cluster_labels[:,3]%9, cmap='Set1')
+        a1.scatter( self.stream_ids, 1.1*np.ones(len(self.stream_ids)))
+        a2.scatter( self.cluster_labels[:,2], self.cluster_labels[:,0], c = self.cluster_labels[:,3]%9, cmap='Set1')
+        a3.scatter( self.cluster_labels[:,1], self.cluster_labels[:,0], c = self.cluster_labels[:,3]%9, cmap='Set1')
+        a2.set_xlim([-lim,lim])
+        a3.set_xlim([-lim,lim])

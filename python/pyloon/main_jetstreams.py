@@ -2,7 +2,7 @@ from loonsim import LoonSim
 from optiloon.loonpathplanner import MonteCarloPlanner as MCP
 from optiloon.loonpathplanner import PlantInvertingController as PIC
 from optiloon.loonpathplanner import WindAwarePlanner as WAP
-from pyflow.pystreams import JetStreamIdentifier as JSI
+from pyflow.pystreams import VarThresholdIdentifier as JSI
 import numpy as np
 from pandas import DataFrame
 from matplotlib import pyplot as plt
@@ -39,7 +39,16 @@ vx = vx / np.max(np.abs(vx))
 vy = vy / np.max(np.abs(vy))
 z = z / np.max(np.abs(z))
 data = np.array([vx, vy, z]).T
-jets = JSI(data=data, kmax=10)
-
+threshold = 0.01
+streamsize = 20
+jets = JSI(data=data, threshold=threshold, streamsize=streamsize)
 jets.plot()
 plt.show()
+
+# threshold = 1.0
+# while(True):
+#     print(threshold)
+#     jets = JSI(data=data, threshold=threshold)
+#     jets.plot()
+#     plt.show()
+#     threshold /= 2.0
