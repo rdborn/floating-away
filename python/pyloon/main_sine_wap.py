@@ -26,13 +26,16 @@ pstar = [0.0, 0.0, 13000.0]
 
 last_pos = LS.loon.get_pos()
 pos = last_pos
-LPP = WAP(field=LS.field, lo=10000, hi=30000)
+LPP = WAP(	field=LS.field,
+			lower=5000,
+			upper=30000,
+			streamsize=5)
 
 # Simulation
 while(True):
 	pol = LPP.plan(LS.loon, pstar)
 	pos = LS.loon.get_pos() # get balloon's position
-	print(pol)
+	print(pos)
 	for i in range(10):
 		u = (pol - pos[2])
 		u = u if u < 5 else 5

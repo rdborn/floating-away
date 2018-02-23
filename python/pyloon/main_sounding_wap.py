@@ -15,8 +15,8 @@ hz = 0.2
 duration = 6
 
 # Set up flow field
-file = "./weather-data/oak_2017_07_01_00z.txt"
-# file = "./weather-data/oak_2018_02_08_00z.txt"
+# file = "./weather-data/oak_2017_07_01_00z.txt"
+file = "./weather-data/oak_2018_02_08_00z.txt"
 LS = LoonSim(file=file, Fs=hz, xi=10000.0, yi=10000.0, zi=15000.0)
 
 # Set point
@@ -25,8 +25,8 @@ pstar = [0.0, 0.0, 13000.0]
 last_pos = LS.loon.get_pos()
 pos = last_pos
 LPP = WAP(	field=LS.field,
-			lo=5000,
-			hi=30000,
+			lower=5000,
+			upper=30000,
 			streamsize=5)
 
 if not plotting:
@@ -57,7 +57,7 @@ if not plotting:
 if plotting:
 	lo = 3.0
 	hi = 31000.0
-	# LPP = LoonPathPlanner(field=LS.field, res=3, lo=lo, hi=hi, sounding=True)
+	# LPP = LoonPathPlanner(field=LS.field, res=3, lower=lo, upper=hi, sounding=True)
 	#
 	z = np.linspace(lo,hi,1000)
 	# sorted_keys = np.sort(LS.field.field.keys())

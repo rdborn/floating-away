@@ -12,8 +12,8 @@ hz = 0.2
 duration = 6
 
 # Set up flow field
-# file = "./weather-data/oak_2017_07_01_00z.txt"
-file = "./weather-data/oak_2018_02_08_00z.txt"
+file = "./weather-data/oak_2017_07_01_00z.txt"
+# file = "./weather-data/oak_2018_02_08_00z.txt"
 LS = LoonSim(file=file, Fs=hz, xi=10000.0, yi=10000.0, zi=15000.0)
 
 # Set point
@@ -23,7 +23,7 @@ last_pos = LS.loon.get_pos()
 pos = last_pos
 lo = LS.loon.z - 5
 hi = LS.loon.z + 5
-LPP = PIC(field=LS.field, res=3, lo=10000, hi=30000)
+LPP = PIC(field=LS.field, res=3, lower=10000, upper=30000)
 thresh = 3
 
 # Simulation

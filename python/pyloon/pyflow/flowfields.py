@@ -10,17 +10,38 @@ from skewt import SkewT
 
 class FlowField:
 	def __init__(self, *args, **kwargs):
+		"""
+		Initialize general flow field object.
+
+		kwarg 'pmax' 3D point, upper corner of 3D bounding box (default [inf, inf, inf]).
+		kwarg 'pmin' 3D point, lower corner of 3D bounding box (default [-inf, -inf, -inf]).
+		kwarg 'density' density of air in this flow field (default 0.25).
+		"""
+
 		self.pmax = parsekw(kwargs, 'pmax', np.array([np.inf, np.inf, np.inf]))
 		self.pmin = parsekw(kwargs, 'pmin', -np.array([np.inf, np.inf, np.inf]))
 		self.density = parsekw(kwargs, 'density', 0.25)
 		self.field = dict()
 		self.coords = dict()
-		pass
 
 	def __str__(self):
+		"""
+		NOT SUPPORTED
+		Return type designation of flow field.
+		"""
+
 		return self.type
 
 	def set_flow(self, *args, **kwargs):
+		"""
+		Set the flow at a particular spot in the flow field.
+
+		kwarg 'p' 3D point at which to set the flow.
+		kwarg 'magnitude' speed of flow at p
+		kwarg 'direction' direction of flow at p
+		return success/failure
+		"""
+
 		p = parsekw(kwargs, 'p', np.inf)
 		magnitude = parsekw(kwargs, 'magnitude', 0.0)
 		direction = parsekw(kwargs, 'direction', 0.0)
@@ -33,6 +54,14 @@ class FlowField:
 		return True
 
 	def get_flow(self, *args, **kwargs):
+		"""
+		Get the flow at a particular point in the flow field.
+
+		kwarg 'p' point at which to get the flow.
+		(if success) return magnitude and direction of flow at p
+		(if failure) return failure
+		"""
+
 		p = parsekw(kwargs, 'p', np.inf)
 		if any(np.array(p) == np.inf):
 			return warning("No point specified. Cannot get flow.")
@@ -43,6 +72,13 @@ class FlowField:
 		return self.field[hash3d(p)]
 
 	def __check_validity__(self, p):
+		"""
+		Check whether a point is in the flow field.
+
+		parameter p 3D point to query.
+		return valid/not valid
+		"""
+
 		valid = True
 		valid &= p[0] <= self.pmax[0]
 		valid &= p[1] <= self.pmax[1]
@@ -53,8 +89,14 @@ class FlowField:
 		return valid
 
 	def __find__(self, *args, **kwargs):
+		"""
+		Find the nearest points with explicit values above and below in the flow field.
+
+		kwarg p point at which to find the nearest point above and nearest point below.
+		return nearest point above p and nearest point below p
+		"""
+
 		p = parsekw(kwargs, 'p', np.inf)
-		n = parsekw(kwargs, 'n', 1)
 		if any(np.array(p) == np.inf):
 			return warning("No point specified. Cannot get flow.")
 		if not self.__check_validity__(p):
@@ -77,25 +119,37 @@ class FlowField:
 				idx_next = idx_prev
 			z = np.array([	np.array(self.coords.values())[idx_prev],
 							np.array(self.coords.values())[idx_next]])
-		# # Old (buggy) way:
-		# z = np.zeros([n,len(self.coords.values()[0])])
-		# n_smallest = pd.Series(distances).nsmallest(n)
-		# for i in range(n):
-		# 	z[i] = np.array(self.coords.values())[distances == n_smallest.iloc[i]]
 		return np.squeeze(z)
 
 class PlanarField(FlowField):
 	def __init__(self, *args, **kwargs):
+		"""
+		Initialize flowfield whose value does not vary with x and y.
+
+		kwarg 'zmin' minimum altitude at which to generate flow field.
+		kwarg 'zmax' maximum altitude at which to generate flow field.
+		kwarg 'density' density of air in this flow field.
+		"""
+
 		zmax = parsekw(kwargs, 'zmax',np.inf)
 		zmin = parsekw(kwargs, 'zmin',-np.inf)
 		pmax = np.array([np.inf, np.inf, zmax])
 		pmin = np.array([-np.inf, -np.inf, zmin])
 		FlowField.__init__(	self,
-							pmax=kwargs.get('pmax'),
-							pmin=kwargs.get('pmin'),
+							pmax=pmax,
+							pmin=pmin,
 							density=kwargs.get('density'))
 
 	def set_planar_flow(self, *args, **kwargs):
+		"""
+		Set flow at a given altitude.
+
+		kwarg 'z' altitude at which to set flow.
+		kwarg 'magnitude' speed of flow at z
+		kwarg 'direction' direction of flow at z
+		return success/failure
+		"""
+
 		z = parsekw(kwargs, 'z', np.inf)
 		if z == np.inf:
 			return warning("No point specified. Cannot set flow.")
@@ -106,19 +160,31 @@ class PlanarField(FlowField):
 									direction=kwargs.get('direction'))
 
 	def get_flow(self, *args, **kwargs):
+		"""
+		Get flow at a given point.
+
+		kwarg 'p' 3D point at which to get flow.
+		return magnitude and direction of flow at p
+		"""
+
 		p = parsekw(kwargs, 'p', np.inf)
 		if any(compare(p, np.inf)):
 			return warning("No point specified. Cannot get flow.")
-		# Only floorz and ceilz are used in the interpolation since
-		# flow doesnt change with x and y in this particular sim
 		return self.__interp__(z=p[2])
 
 	def __interp__(self, *args, **kwargs):
+		"""
+		Interpolate between points with explicit values to get field value at a given point.
+
+		kwarg 'z' altitude at which to find field value.
+		return interpolated wind speed and interpolated direction
+		"""
+
 		z = parsekw(kwargs, 'z', np.inf)
 		if z == np.inf:
 			return warning("No point specified. Cannot set flow.")
 		p = np.array([0, 0, z])
-		[p1, p2] = FlowField.__find__(self, p=p, n=2)
+		[p1, p2] = FlowField.__find__(self, p=p)
 		[p1mag, p1dir] = self.field[hash3d(p1)]
 		[p2mag, p2dir] = self.field[hash3d(p2)]
 		dp = np.linalg.norm(np.subtract(p1, p2))

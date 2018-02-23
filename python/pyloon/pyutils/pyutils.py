@@ -49,3 +49,12 @@ def normalize(x):
     mu = np.mean(x)
     sigma = np.sqrt(np.var(x))
     return (x - mu) / sigma
+
+def saturate(x, sat):
+    if np.isnan(x):
+        warning("Cannot saturate NaN. Returning NaN.")
+        return x
+    sat = abs(sat)
+    x = x if x < sat else sat
+    x = x if x > -sat else -sat
+    return x
