@@ -36,12 +36,20 @@ while(True):
 	pol = LPP.plan(LS.loon, pstar)
 	pos = LS.loon.get_pos() # get balloon's position
 	print(pos)
-	for i in range(10):
-		u = (pol - pos[2])
-		u = u if u < 5 else 5
-		u = u if u > -5 else -5
+	# for i in range(10):
+	u = np.sign(pol - pos[2])
+	u = 5 if u > 0 else u
+	u = -5 if u < 0 else u
+	i = 0
+	while (pol - pos[2]) * u > 0 or i < 10:
+		# u = (pol - pos[2])
+		# u = u if u < 5 else 5
+		# u = u if u > -5 else -5
+		# u = 5 if u > 0 else u
+		# u = -5 if u < 0 else u
 		LS.propogate(u)
 		pos = LS.loon.get_pos()
+		i += 1
 	LS.plot()
 
 ########################################

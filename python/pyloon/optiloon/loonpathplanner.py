@@ -83,9 +83,10 @@ class LoonPathPlanner:
         return mean of flow in x direction
         return mean of flow in y direction
         """
-
-        mean_fx = self.GPx.predict(np.atleast_2d(np.array(p)[self.mask]), return_std=False)
-        mean_fy = self.GPy.predict(np.atleast_2d(np.array(p)[self.mask]), return_std=False)
+        p_pred = np.atleast_2d(np.array(p)[self.mask])
+        p_pred = p_pred.T if np.shape(p_pred)[0] == 1 else p_pred
+        mean_fx = self.GPx.predict(p_pred, return_std=False)
+        mean_fy = self.GPy.predict(p_pred, return_std=False)
         return mean_fx, mean_fy
 
     def __cost__(self, p, pstar):
@@ -428,19 +429,19 @@ class WindAwarePlanner(LoonPathPlanner):
         return altitude of center of most desirable jetstream.
         """
 
-        vals = np.array(self.jets.jetstreams.values())
-        z_test = vals[:,0]
-        theta = np.arccos(vals[:,2])
+        # vals = np.array(self.jets.jetstreams.values())
+        # z_test = vals[:,0]
+        # theta = np.arccos(vals[:,2])
         # theta = self.__wind_dir__(z_test)
         phi = self.__desired_dir__(loon, pstar)
-        candidates = np.cos(phi - theta)
+        # candidates = np.cos(phi - theta)
         # candidates = self.__smooth__(phi, theta)
-        target = self.__min_climb__(loon, z_test, candidates)
-        target = self.__find_best_jetstream__(loon, pstar, 5)
-        print("Target altitude: " + str(target))
-        print("Direction at target: " + str((theta[z_test == target] * 180.0 / np.pi) % 360))
+        # target = self.__min_climb__(loon, z_test, candidates)
+        target, J = self.__find_best_jetstream__(loon, pstar, 5)
+        print("Target altitude: " + str(target.avg_alt))
+        print("Direction at target: " + str((target.direction * 180.0 / np.pi) % 360))
         print("Desired direction: " + str((phi * 180.0 / np.pi - 180.0) % 360))
-        return target
+        return target.avg_alt
 
     def __smooth__(self, phi, theta):
         """
@@ -513,73 +514,135 @@ class WindAwarePlanner(LoonPathPlanner):
         return theta
 
     def __find_best_jetstream__(self, loon, pstar, u):
-        J_jetstreams, z_jetstreams = self.__costs_of_each_jetstream__(loon, pstar)
-        dp_jetstreams = np.inf * np.ones(len(z_jetstreams))
-        J_fuel_jetstreams = np.inf * np.ones(len(z_jetstreams))
-        for i, z in enumerate(z_jetstreams):
-            J_p_jetstreams[i], J_fuel_jetstreams[i] = self.__cost_to_altitude__(loon, z, u)
-        J = J_jetstreams + J_fuel_jetstreams + J_p_jetstreams
-        return z_jetstreams[J == np.min(J)]
+        n_streams = len(self.jets.jetstreams)
+        J_jetstreams = np.inf * np.ones(n_streams)
+        J_fuel_jetstreams = np.inf * np.ones(n_streams)
+        J = np.inf * np.ones(n_streams)
+        pos = loon.get_pos()
+        x_loon = pos[0]
+        y_loon = pos[1]
+        z_jets = np.zeros(n_streams)
+        best_jet = self.jets.jetstreams.values()[0]
+        best_J = np.inf
+        for i, jet in enumerate(self.jets.jetstreams.values()):
+            z_jets[i] = jet.avg_alt
+            dp, dz = self.__cost_to_altitude__(loon, z_jets[i], u)
+            dx = dp[0]
+            dy = dp[1]
+            new_pos = np.array([dx, dy, dz]) + pos
+            J_fuel_jetstreams[i] = dz*1e-3
+            J_jetstreams[i] = self.__cost_of_jetstream__(new_pos, pstar, jet)
+            J[i] = J_fuel_jetstreams[i] + J_jetstreams[i]
+            if J[i] < best_J:
+                best_J = J[i]
+                best_jet = jet
+            print("Alt: " + str(jet.avg_alt) + "\t\tJf: " + str(np.int(J_fuel_jetstreams[i])) + "\t\tJj: " + str(np.int(J_jetstreams[i])))
+        return best_jet, best_J
 
     def __phiddot__(self, p, phat, pdot):
         phidot = np.dot(phat, pdot) * phat
         phiddot = (((np.linalg.norm(pdot)**2 - 2 * np.linalg.norm(phidot)**2)) * phat + np.linalg.norm(phidot) * pdot) / np.linalg.norm(p)
         return phiddot
 
-    def __costs_of_each_jetstream__(self, loon, pstar):
-        pos = loon.get_pos()[0:2]
+    # def __costs_of_each_jetstream__(self, loon, pstar):
+    #     pos = np.array(loon.get_pos())
+    #     p = pos[0:2]
+    #     z_loon = pos[2]
+    #     phat = p / np.linalg.norm(p)
+    #     vals = np.array(self.jets.jetstreams.values())
+    #     z = vals[:,0]
+    #     magnitude = vals[:,1]
+    #     direction = vals[:,2]
+    #     vx = magnitude * np.cos(direction)
+    #     vy = magnitude * np.sin(direction)
+    #     pdots = np.squeeze(np.array([vx, vy]).T)
+    #     pstar = pstar[0:2]
+    #     phi = p - pstar
+    #     J = np.inf * np.ones(len(pdots))
+    #     for i, pdot in enumerate(pdots):
+    #         phiddot = self.__phiddot__(p, phat, pdot)
+    #         J[i] = np.dot(p, p) + np.dot(p, pdot) + np.dot(phiddot, phiddot) # + (z_loon - z[i])**2
+    #     return J, z
+
+    def __cost_of_jetstream__(self, pos, pstar, jet):
+        # Get the balloon's current position and store its lateral and vertical
+        # positions separately
+        # pos = np.array(loon.get_pos())
         p = pos[0:2]
         z_loon = pos[2]
-        phat = p / np.linalg.norm(p)
-        vals = np.array(self.jets.jetstreams.values())
-        z = vals[:,0]
-        magnitude = vals[:,1]
-        direction = vals[:,2]
+        # Get the jetstream in question and store its magnitude and direction
+        # jet = self.jets.find(z_jet)
+        magnitude = jet.magnitude
+        direction = jet.direction
+        # Calculate the components of the wind velocity and store it as the
+        # time derivative of the balloon's position
         vx = magnitude * np.cos(direction)
         vy = magnitude * np.sin(direction)
-        pdots = np.array([vx, vy]).T
+        pdot = np.squeeze(np.array([vx, vy]).T)
+        pdothat = pdot / np.linalg.norm(pdot)
+        # Calculate the unit vector along the balloon's lateral position vector
+        phat = p / np.linalg.norm(p)
+        # Get the lateral position of the goal point
         pstar = pstar[0:2]
+        # Translate the coordinate system such that pstar is at the origin
         phi = p - pstar
-        J = np.inf * np.ones(len(pdots))
-        for i, pdot in enumerate(pdots):
-            phiddot = self.__phiddot__(p, phat, pdot)
-            J[i] = np.dot(p, p) + np.dot(p, pdot) + np.dot(phiddot, phiddot) # + (z_loon - z[i])**2
-        return J, z
+        phihat = phi / np.linalg.norm(phi)
+        # Calculate the acceleration of the balloon towards the origin
+        phiddot = self.__phiddot__(p, phat, pdot)
+        # Calculate the cost of this jetstream at this position with this goal
+        # position as...
+        # + the magnitude of the distance from the goal
+        #       (encouragement to be near the goal)
+        # + velocity away from the goal
+        #       (encouragement to move towards the goal)
+        # + the magnitude of the acceleration towards the goal
+        #       (encouragement to move in a controlled manner with respect to the goal)
+        # print("phi: " + str(phi) + "\t\tpdot: " + str(pdot))
+        J_position = np.sqrt(np.dot(phi, phi))*1e-3*0
+        J_velocity = (np.dot(phihat, pdothat)+1)*np.linalg.norm(p)*1e-1
+        J_accel = np.dot(phiddot, phiddot)*0
+        J = J_position + J_velocity + J_accel
+        # Return the calculated cost
+        return J
 
-    def __dp_btwn_jetstreams__(self, loon, pstar, u):
-        vals = np.array(self.jets.jetstreams.values())
-        altitude = vals[:,0]
-        dp_next = np.zeros([len(altitude),2])
-        dp = np.zeros([len(altitude), len(altitude), 2])
-        for i, z in enumerate(altitude):
-            if (len(altitude) - i) > 1:
-                z_test = np.linspace(z[i], z[i+1], 100)
-                vx, vy = self.ev(z_test)
-                mean_vx = np.mean(vx)
-                mean_vy = np.mean(vy)
-                dz = z[i+1] - z[i]
-                t = dz / u
-                dx = mean_vx * t
-                dy = mean_vy * t
-                dp_next[i] = np.array([dx, dy])
-        for i in range(len(dp_next)):
-            for j in range(i, len(dp_next)):
-                dp_ij = 0.0
-                for k in range(i, j):
-                    dp_ij += dp_next[k]
-                dp[i,j] = dp_ij
-                dp[j,i] = dp_ij
-        self.dp_jetstreams = dp
-        return dp
+    # def __dp_btwn_jetstreams__(self, loon, pstar, u):
+    #     vals = np.array(self.jets.jetstreams.values())
+    #     altitude = vals[:,0]
+    #     dp_next = np.zeros([len(altitude),2])
+    #     dp = np.zeros([len(altitude), len(altitude), 2])
+    #     for i, z in enumerate(altitude):
+    #         if (len(altitude) - i) > 1:
+    #             z_test = np.linspace(z[i], z[i+1], 100)
+    #             vx, vy = self.ev(z_test)
+    #             mean_vx = np.mean(vx)
+    #             mean_vy = np.mean(vy)
+    #             dz = z[i+1] - z[i]
+    #             t = dz / u
+    #             dx = mean_vx * t
+    #             dy = mean_vy * t
+    #             dp_next[i] = np.array([dx, dy])
+    #     for i in range(len(dp_next)):
+    #         for j in range(i, len(dp_next)):
+    #             dp_ij = 0.0
+    #             for k in range(i, j):
+    #                 dp_ij += dp_next[k]
+    #             dp[i,j] = dp_ij
+    #             dp[j,i] = dp_ij
+    #     self.dp_jetstreams = dp
+    #     return dp
 
     def __cost_to_altitude__(self, loon, z, u):
         pos = loon.get_pos()
         z_loon = pos[2]
-        z_test = np.linspace(z_loon, z, 100)
-        vx, vy = self.ev(z_test)
+        N = 500
+        x_test = np.zeros(N)
+        y_test = np.zeros(N)
+        z_test = np.linspace(z_loon, z, N)
+        p_test = np.array([x_test, y_test, z_test])
+        vx, vy = self.ev(p_test)
         mean_vx = np.mean(vx)
         mean_vy = np.mean(vy)
-        dz = abs(z - z_test)
+        dz = abs(z - z_loon)
         t = dz / u
         dx = mean_vx * t
         dy = mean_vy * t

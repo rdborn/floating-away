@@ -15,8 +15,8 @@ hz = 0.2
 duration = 6
 
 # Set up flow field
-# file = "./weather-data/oak_2017_07_01_00z.txt"
-file = "./weather-data/oak_2018_02_08_00z.txt"
+file = "./weather-data/oak_2017_07_01_00z.txt"
+# file = "./weather-data/oak_2018_02_08_00z.txt"
 LS = LoonSim(file=file, Fs=hz, xi=10000.0, yi=10000.0, zi=15000.0)
 
 # Set point
@@ -35,12 +35,20 @@ if not plotting:
 		pol = LPP.plan(LS.loon, pstar)
 		pos = LS.loon.get_pos() # get balloon's position
 		sat = 20
-		for i in range(10):
-			u = (pol - pos[2])
-			u = u if u < sat else sat
-			u = u if u > -sat else -sat
+		# for i in range(10):
+		u = np.sign(pol - pos[2])
+		u = 5 if u > 0 else u
+		u = -5 if u < 0 else u
+		i = 0
+		while (pol - pos[2]) * u > 0 or i < 10:
+			# u = (pol - pos[2])
+			# u = u if u < 5 else 5
+			# u = u if u > -5 else -5
+			# u = 5 if u > 0 else u
+			# u = -5 if u < 0 else u
 			LS.propogate(u)
 			pos = LS.loon.get_pos()
+			i += 1
 		print(pos)
 		LS.plot()
 

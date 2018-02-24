@@ -11,6 +11,14 @@ sys.path.insert(1, os.path.join(sys.path[0],'..'))
 
 from pyutils.pyutils import parsekw, hash3d, hash4d, rng
 
+class JetStream:
+    def __init__(self, *args, **kwargs):
+        self.avg_alt = parsekw(kwargs, 'avg_alt', 0)
+        self.min_alt = parsekw(kwargs, 'min_alt', 0)
+        self.max_alt = parsekw(kwargs, 'max_alt', 0)
+        self.magnitude = parsekw(kwargs, 'magnitude', 0)
+        self.direction = parsekw(kwargs, 'direction', 0)
+
 class JetStreamIdentifier:
     def __init__(self, *args, **kwargs):
         self.X = parsekw(kwargs, 'data', None)
@@ -109,67 +117,140 @@ class VarThresholdIdentifier(JetStreamIdentifier):
         threshold = parsekw(kwargs, 'threshold', 0.005)
         streamsize = parsekw(kwargs, 'streamsize', 15)
         JetStreamIdentifier.__init__(self, data=kwargs.get('data'))
-        self.__generate_dict__(2)
-        self.__cluster__(threshold)
-        self.__identify_streams__(streamsize)
-        self.__classify_streams__()
+        self.__generate_dict__(2)               # store data in a dictionary indexed by altitude
+        self.__cluster__(threshold)             # cluster data into sets of low variance
+        self.__identify_streams__(streamsize)   # identify large clusters
+        self.__classify_streams__()             # assign each stream an average altitude, magnitude, and direction
 
     def __generate_dict__(self, key_idx):
+        # Initialize data structure as dictionary
         self.data = dict()
+        # For every data point in the raw data...
         for x in self.X:
+            # Initialize an empy list
             val = []
+            # For every element in the data point
+            # (i.e. magnitude, direction, altitude)...
             for i in range(len(x)):
+                # If this element is not the one we want to use
+                # for the dictionary keys...
                 if i != key_idx:
+                    # Add this element to val
                     val = np.append(val, x[i])
+            # Add this data point to the dictionary,
+            # indexed by the appropriate value
             self.data[x[key_idx]] = np.array(val)
 
     def __cluster__(self, threshold):
+        # Initialize the clusters data structure as a dictionary
         self.clusters = dict()
+        # Initialize the cluster_labels data structure as an array of zeros
+        # with the same number of rows as data points and the same number
+        # of columns as each data point
         self.cluster_labels = np.zeros([len(self.data.keys()),len(self.X[0])+1])
+        # Initialize the total number of clusters we have created to zero
         self.n_clusters = 0
+        # Initialize the cluster data structure to an empty list
         cluster = []
+        # Initialize the cluster_values data structure to an empty list
         cluster_vals = []
-        i = 0
+        # For each altitude value (in ascending order)...
         for i, key in enumerate(np.sort(self.data.keys())):
+            # Retrieve the wind magnitude and direction at this altitude
             val = self.data[key]
             mag_val = val[0]
             dir_val = val[1]
+            # If adding the value of the wind's direction at this altitude
+            # to the set of directions at each altitude sampled so far in this
+            # cluster will put the variance of the sample over the threshold,
+            # OR if we are at the end of our data...
             if np.var(np.append(cluster_vals,dir_val)) > threshold or i == len(self.data.keys())-1:
+                # Store the altitudes sampled in this cluster into the clusters
+                # dictionary, indexed by the order in which we added the clusters
                 self.clusters[self.n_clusters] = np.array(cluster)
+                # Increment the number of clusters we have identified
                 self.n_clusters += 1
+                # Reset the local variable cluster to hold only the most recent
+                # altitude sampled
                 cluster = [key]
+                # Reset the local variable cluster_values to hold only the most
+                # recent direction sampled
                 cluster_vals = [dir_val]
             else:
+                # Add the most recently sampled altitude to the local variable cluster
                 cluster = np.append(cluster, key)
+                # Add the most recently sampled direction to the local variable cluster_values
                 cluster_vals = np.append(cluster_vals, dir_val)
+            # Label this data point as belonging to this cluster.
+            # cluster_labels holds the altitude, magnitude, direction, and
+            # cluster ID of each data point in no particular order
             self.cluster_labels[i] = np.array([key, mag_val, dir_val, self.n_clusters])
-            i += 1
 
     def __identify_streams__(self, streamsize):
+        # Initialize jetstreams to an empty list
         jetstreams = []
+        # For each cluster...
         for c in self.clusters.keys():
+            # If the cluster is large enough...
             if len(self.clusters[c]) > streamsize:
+                # Add the cluster to the jetstreams
                 jetstreams = np.append(jetstreams,c)
+        # Store the jetstreams we identified
         self.stream_ids = np.array(jetstreams)
 
     def __classify_streams__(self):
-        alt_avgs = np.zeros(len(self.stream_ids))
-        mag_avgs = np.zeros(len(self.stream_ids))
-        dir_avgs = np.zeros(len(self.stream_ids))
+        # Initialize the summed altitude, magnitude, and direction data structures
+        # as empty arrays with the same length as number of jetstreams
+        alt_sum = np.zeros(len(self.stream_ids))
+        mag_sum = np.zeros(len(self.stream_ids))
+        dir_sum = np.zeros(len(self.stream_ids))
+        # Initialize the number of samples in each jetstream to an empty array
+        # with the same length as number of jetstreams
         n = np.zeros(len(self.stream_ids))
+        # Initialize the maximum and minimum altitudes data structures as empty
+        # arrays with the same length as number of jetstreams
+        alt_min = np.zeros(len(self.stream_ids))
+        alt_max = np.zeros(len(self.stream_ids))
+        # For each data point...
         for x in self.cluster_labels:
+            # Identify which cluster the data point belongs to
             idx = (self.stream_ids == x[3])
-            alt_avgs[idx] += x[0]
-            mag_avgs[idx] += x[1]
-            dir_avgs[idx] += x[2]
-            n += idx
-        alts = alt_avgs / n
-        mags = mag_avgs / n
-        dirs = dir_avgs / n
+            # Add the data point's values to the appropriate averages
+            alt_sum[idx] += x[0]
+            mag_sum[idx] += x[1]
+            dir_sum[idx] += x[2]
+            # Increment the appropriate number of samples
+            n[idx] += 1
+            # If necessary, update the appropriate maximums and minimums
+            if x[0] > alt_max[idx]:
+                alt_max[idx] = x[0]
+            if x[0] < alt_min[idx]:
+                alt_min[idx] = x[0]
+        # Average the altitudes, magnitudes, and directions of each jetstream
+        alt_avg = alt_sum / n
+        mag_avg = mag_sum / n
+        dir_avg = dir_sum / n
+        # Initialize the jetstreams data structure as an empty dicitonary
         self.jetstreams = dict()
-        for stream in self.stream_ids:
-            idx = (self.stream_ids == stream)
-            self.jetstreams[stream] = np.array([alts[idx], mags[idx], dirs[idx]])
+        # For each jetstream...
+        for i, stream in enumerate(self.stream_ids):
+            # Store the jetstream object indexed by its ID
+            self.jetstreams[stream] = JetStream(avg_alt=alt_avg[i],
+                                                min_alt=alt_min[i],
+                                                max_alt=alt_max[i],
+                                                magnitude=mag_avg[i],
+                                                direction=np.arccos(dir_avg[i]))
+
+    def find(self, z):
+        # Get all the jetstreams
+        jets = self.jetstreams.values()
+        # For each jetstream...
+        for jet in jets:
+            # If the test point falls within the jetstream's altitude bounds...
+            if z > jet.min_alt and z < jet.max_alt:
+                # Return this jetstream
+                return jet
+        print("Jetstream not found. Can't return anything.")
 
     def plot(self):
         print(self.n_clusters)
