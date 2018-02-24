@@ -7,7 +7,7 @@ def compare(x1, x2):
     return comparison
 
 def parsekw(kwargs, kw, default):
-    return (kwargs.get(kw) if not any(compare(kwargs.get(kw), None)) else default)
+    return (kwargs.get(kw) if not (compare(kwargs.get(kw), None)).any() else default)
 
 def hash3d(p):
     P0 = 73856093
@@ -44,3 +44,17 @@ def downsize(M):
         if all(mask):
             return mask
     return mask
+
+def normalize(x):
+    mu = np.mean(x)
+    sigma = np.sqrt(np.var(x))
+    return (x - mu) / sigma
+
+def saturate(x, sat):
+    if np.isnan(x):
+        warning("Cannot saturate NaN. Returning NaN.")
+        return x
+    sat = abs(sat)
+    x = x if x < sat else sat
+    x = x if x > -sat else -sat
+    return x

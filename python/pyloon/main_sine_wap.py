@@ -15,7 +15,7 @@ duration = 6
 LS = LoonSim(	zmin=0.0,
 			 	zmax=30000.0,
 				resolution=100,
-				frequency=2.0*np.pi/2000.0,
+				frequency=2.0*np.pi/8000.0,
 				amplitude=30.0,
 				phase=0.0,
 				offset=0.0,
@@ -26,19 +26,30 @@ pstar = [0.0, 0.0, 13000.0]
 
 last_pos = LS.loon.get_pos()
 pos = last_pos
-LPP = WAP(field=LS.field, lo=10000, hi=30000)
+LPP = WAP(	field=LS.field,
+			lower=5000,
+			upper=30000,
+			streamsize=5)
 
 # Simulation
 while(True):
 	pol = LPP.plan(LS.loon, pstar)
 	pos = LS.loon.get_pos() # get balloon's position
-	print(pol)
-	for i in range(10):
-		u = (pol - pos[2])
-		u = u if u < 5 else 5
-		u = u if u > -5 else -5
+	print(pos)
+	# for i in range(10):
+	u = np.sign(pol - pos[2])
+	u = 5 if u > 0 else u
+	u = -5 if u < 0 else u
+	i = 0
+	while (pol - pos[2]) * u > 0 or i < 10:
+		# u = (pol - pos[2])
+		# u = u if u < 5 else 5
+		# u = u if u > -5 else -5
+		# u = 5 if u > 0 else u
+		# u = -5 if u < 0 else u
 		LS.propogate(u)
 		pos = LS.loon.get_pos()
+		i += 1
 	LS.plot()
 
 ########################################

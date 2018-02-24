@@ -2,6 +2,7 @@ from loonsim import LoonSim
 from optiloon.loonpathplanner import MonteCarloPlanner as MCP
 from optiloon.loonpathplanner import PlantInvertingController as PIC
 from optiloon.loonpathplanner import WindAwarePlanner as WAP
+from pyflow.pystreams import JetStreamIdentifier as JSI
 import numpy as np
 from pandas import DataFrame
 from matplotlib import pyplot as plt
@@ -23,7 +24,10 @@ pstar = [0.0, 0.0, 13000.0]
 
 last_pos = LS.loon.get_pos()
 pos = last_pos
-LPP = WAP(field=LS.field, lo=10000, hi=30000)
+LPP = WAP(	field=LS.field,
+			lower=5000,
+			upper=30000,
+			streamsize=5)
 
 if not plotting:
 	# Simulation
@@ -31,12 +35,20 @@ if not plotting:
 		pol = LPP.plan(LS.loon, pstar)
 		pos = LS.loon.get_pos() # get balloon's position
 		sat = 20
-		for i in range(10):
-			u = (pol - pos[2])
-			u = u if u < sat else sat
-			u = u if u > -sat else -sat
+		# for i in range(10):
+		u = np.sign(pol - pos[2])
+		u = 5 if u > 0 else u
+		u = -5 if u < 0 else u
+		i = 0
+		while (pol - pos[2]) * u > 0 or i < 10:
+			# u = (pol - pos[2])
+			# u = u if u < 5 else 5
+			# u = u if u > -5 else -5
+			# u = 5 if u > 0 else u
+			# u = -5 if u < 0 else u
 			LS.propogate(u)
 			pos = LS.loon.get_pos()
+			i += 1
 		print(pos)
 		LS.plot()
 
@@ -53,7 +65,7 @@ if not plotting:
 if plotting:
 	lo = 3.0
 	hi = 31000.0
-	# LPP = LoonPathPlanner(field=LS.field, res=3, lo=lo, hi=hi, sounding=True)
+	# LPP = LoonPathPlanner(field=LS.field, res=3, lower=lo, upper=hi, sounding=True)
 	#
 	z = np.linspace(lo,hi,1000)
 	# sorted_keys = np.sort(LS.field.field.keys())

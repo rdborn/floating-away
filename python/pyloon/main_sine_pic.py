@@ -11,11 +11,10 @@ hz = 0.2
 duration = 6
 
 # Set up flow field
-file = "./weather-data/oak_2017_07_01_00z.txt"
 LS = LoonSim(	zmin=0.0,
 			 	zmax=30000.0,
 				resolution=100,
-				frequency=2.0*np.pi/2000.0,
+				frequency=2.0*np.pi/8000.0,
 				amplitude=30.0,
 				phase=0.0,
 				offset=0.0,
@@ -28,7 +27,7 @@ last_pos = LS.loon.get_pos()
 pos = last_pos
 lo = LS.loon.z - 5
 hi = LS.loon.z + 5
-LPP = PIC(field=LS.field, res=3, lo=10000, hi=30000)
+LPP = PIC(field=LS.field, res=3, lower=10000, upper=30000)
 thresh = 3
 
 # Simulation
@@ -41,7 +40,8 @@ while(True):
 	# Implement the first steps of the optimal policy
 	N = 1; # number of steps to take
 	print("Control effort: " + str(pol))
-	LS.propogate(pol) # move the balloon along
+	for i in range(10):
+		LS.propogate(pol) # move the balloon along
 	pos = LS.loon.get_pos() # get balloon's position
 	LS.plot()
 	print(pos)
