@@ -544,26 +544,6 @@ class WindAwarePlanner(LoonPathPlanner):
         phiddot = (((np.linalg.norm(pdot)**2 - 2 * np.linalg.norm(phidot)**2)) * phat + np.linalg.norm(phidot) * pdot) / np.linalg.norm(p)
         return phiddot
 
-    # def __costs_of_each_jetstream__(self, loon, pstar):
-    #     pos = np.array(loon.get_pos())
-    #     p = pos[0:2]
-    #     z_loon = pos[2]
-    #     phat = p / np.linalg.norm(p)
-    #     vals = np.array(self.jets.jetstreams.values())
-    #     z = vals[:,0]
-    #     magnitude = vals[:,1]
-    #     direction = vals[:,2]
-    #     vx = magnitude * np.cos(direction)
-    #     vy = magnitude * np.sin(direction)
-    #     pdots = np.squeeze(np.array([vx, vy]).T)
-    #     pstar = pstar[0:2]
-    #     phi = p - pstar
-    #     J = np.inf * np.ones(len(pdots))
-    #     for i, pdot in enumerate(pdots):
-    #         phiddot = self.__phiddot__(p, phat, pdot)
-    #         J[i] = np.dot(p, p) + np.dot(p, pdot) + np.dot(phiddot, phiddot) # + (z_loon - z[i])**2
-    #     return J, z
-
     def __cost_of_jetstream__(self, pos, pstar, jet):
         # Get the balloon's current position and store its lateral and vertical
         # positions separately
@@ -605,32 +585,6 @@ class WindAwarePlanner(LoonPathPlanner):
         # Return the calculated cost
         return J
 
-    # def __dp_btwn_jetstreams__(self, loon, pstar, u):
-    #     vals = np.array(self.jets.jetstreams.values())
-    #     altitude = vals[:,0]
-    #     dp_next = np.zeros([len(altitude),2])
-    #     dp = np.zeros([len(altitude), len(altitude), 2])
-    #     for i, z in enumerate(altitude):
-    #         if (len(altitude) - i) > 1:
-    #             z_test = np.linspace(z[i], z[i+1], 100)
-    #             vx, vy = self.ev(z_test)
-    #             mean_vx = np.mean(vx)
-    #             mean_vy = np.mean(vy)
-    #             dz = z[i+1] - z[i]
-    #             t = dz / u
-    #             dx = mean_vx * t
-    #             dy = mean_vy * t
-    #             dp_next[i] = np.array([dx, dy])
-    #     for i in range(len(dp_next)):
-    #         for j in range(i, len(dp_next)):
-    #             dp_ij = 0.0
-    #             for k in range(i, j):
-    #                 dp_ij += dp_next[k]
-    #             dp[i,j] = dp_ij
-    #             dp[j,i] = dp_ij
-    #     self.dp_jetstreams = dp
-    #     return dp
-
     def __cost_to_altitude__(self, loon, z, u):
         pos = loon.get_pos()
         z_loon = pos[2]
@@ -648,3 +602,150 @@ class WindAwarePlanner(LoonPathPlanner):
         dy = mean_vy * t
         dp = np.array([dx, dy])
         return dp, dz
+
+class MPCWAP(WindAwarePlanner):
+    def plan(self, loon, u, T, pstar, depth):
+        self.sequences = dict()
+        self.__tree_search__(loon, u, T, pstar, depth, 0.0, np.array([]))
+        min_J = np.min(self.sequences.keys())
+        # print(self.sequences.keys())
+        # print(np.array(self.sequences.values()))
+        best_pol = self.sequences[min_J]
+        return best_pol
+
+    def __tree_search__(self, loon, u, T, pstar, depth, J, policy):
+        if depth == 0:
+            self.sequences[J] = policy
+            return
+
+        up_cost, up_loon = self.__cost_2_move__(loon, u, pstar)
+        down_cost, down_loon = self.__cost_2_move__(loon, -u, pstar)
+        stay_cost, stay_loon = self.__cost_2_stay__(loon, T, pstar)
+
+        up_jet = self.jets.find(up_loon.get_pos()[2])
+        down_jet = self.jets.find(down_loon.get_pos()[2])
+        stay_jet = self.jets.find(stay_loon.get_pos()[2])
+
+        up_policy = np.append(np.array(policy), np.array([up_jet.avg_alt]))
+        down_policy = np.append(np.array(policy), np.array([down_jet.avg_alt]))
+        stay_policy = np.append(np.array(policy), np.array([stay_jet.avg_alt]))
+
+        self.__tree_search__(up_loon, u, T, pstar, depth-1, J+up_cost, up_policy)
+        self.__tree_search__(down_loon, u, T, pstar, depth-1, J+down_cost, down_policy)
+        self.__tree_search__(stay_loon, u, T, pstar, depth-1, J+stay_cost, stay_policy)
+
+    def __cost_2_move__(self, loon, u, pstar):
+        pos = loon.get_pos()
+        z = pos[2]
+        curr_jetstream = self.jets.find(z)
+        next_jetstream = self.jets.find_adjacent(z, u)
+        target_alt = next_jetstream.avg_alt
+        test_loon = copy.deepcopy(loon)
+        if target_alt == curr_jetstream.avg_alt:
+            print("No jetstream in that direction. Returning cost of inf")
+            return np.inf, test_loon
+        test_pos = test_loon.get_pos()
+        J_pos = 0.0
+        dt = 0.0
+        while (target_alt - test_pos[2]) * np.sign(u) > 0:
+            vx, vy = self.ev(test_pos)
+            test_loon.update(vx=vx, vy=vy, vz=u)
+            test_pos = test_loon.get_pos()
+            dp = pstar - test_pos
+            J_pos += np.sum((dp[0:2])**2)
+            dt += 1.0 / loon.Fs
+        J_pos = np.sqrt(J_pos / dt)
+        J_vel = WindAwarePlanner.__cost_of_jetstream__(self, test_pos, pstar, next_jetstream)
+        J = (J_pos + J_vel + (target_alt - z)**2*1e-5)
+        return J, test_loon
+
+    def __cost_2_stay__(self, loon, T, pstar):
+        pos = loon.get_pos()
+        z = pos[2]
+        curr_jetstream = self.jets.find(z)
+        test_loon = copy.deepcopy(loon)
+        test_pos = test_loon.get_pos()
+        vx, vy = self.ev(test_pos)
+        J_pos = 0
+        dt = 0
+        while (T - dt) > 0:
+            test_loon.update(vx=vx, vy=vy)
+            test_pos = test_loon.get_pos()
+            dp = pstar - test_pos
+            J_pos += np.sum((dp[0:2])**2)
+            dt += 1.0 / loon.Fs
+        J_pos = np.sqrt(J_pos / dt)
+        J_vel = WindAwarePlanner.__cost_of_jetstream__(self, test_pos, pstar, curr_jetstream)
+        J = (J_pos + J_vel)
+        return J, test_loon
+
+    def __delta_p_between_jetstreams__(self, u):
+        jets = self.jets.jetstreams.values()
+        for jet1 in jets:
+            for jet2 in jets:
+                if jet1.avg_alt != jet2.avg_alt:
+                    pass
+
+class MPCWAPFast(WindAwarePlanner):
+    def plan(self, loon, u, T, pstar, depth):
+        self.sequences = dict()
+        self.__tree_search__(loon.get_pos(), u, T, pstar, depth, 0.0, np.array([]))
+        min_J = np.min(self.sequences.keys())
+        # print(self.sequences.keys())
+        # print(np.array(self.sequences.values()))
+        best_pol = self.sequences[min_J]
+        # print(self.sequences.keys())
+        # print(np.array(self.sequences.values()))
+        return best_pol
+
+    def __tree_search__(self, pos, u, T, pstar, depth, J, policy):
+        if depth == 0:
+            self.sequences[J] = policy
+            return
+        this_jet = self.jets.find(pos[2])
+        j = this_jet.id
+        jets = self.jets.jetstreams.values()
+        for i, jet in enumerate(jets):
+            target_alt = jet.avg_alt
+            if i == j:
+                magnitude = jet.magnitude
+                direction = jet.direction
+                vx = magnitude * np.cos(direction)
+                vy = magnitude * np.sin(direction)
+                dp = np.array([vx, vy]) * T
+                J_fuel = 0.0
+            else:
+                dp = self.delta_p[i,j]
+                J_fuel = (target_alt - pos[2])**2*1e-6
+            new_pos = np.append(pos[0:2] + dp, target_alt)
+            J_pos = np.sqrt(np.sum((new_pos[0:2] - pstar[0:2])**2))*1e-2
+            J_vel = WindAwarePlanner.__cost_of_jetstream__(self, new_pos, pstar, jet)*1e1
+            J_i = J_pos + J_vel + J_fuel + J
+            policy_i = np.append(np.array(policy), np.array(target_alt))
+            # print(str(np.floor(target_alt)) + "\t\tJpos: " + str(np.floor(J_pos)) + "\t\tJvel: " + str(np.floor(J_vel)) + "\t\tJfuel: " + str(np.floor(J_fuel)) + "\t\tJ: " + str(np.floor(J_i)))
+            self.__tree_search__(new_pos, u, T, pstar, depth-1, J_i, policy_i)
+
+    def __delta_p_between_jetstreams__(self, u):
+        jets = self.jets.jetstreams.values()
+        self.delta_p = np.zeros([len(jets),len(jets),2])
+        N = 500
+        x_test = np.zeros(N)
+        y_test = np.zeros(N)
+        for i, jet1 in enumerate(self.jets.jetstreams.values()):
+            jet1.set_id(i)
+            for j, jet2 in enumerate(self.jets.jetstreams.values()):
+                if i < j:
+                    z1 = jet1.avg_alt
+                    z2 = jet2.avg_alt
+                    z_test = np.linspace(z1, z2, N)
+                    p_test = np.array([x_test, y_test, z_test])
+                    vx, vy = self.ev(p_test)
+                    mean_vx = np.mean(vx)
+                    mean_vy = np.mean(vy)
+                    dz = abs(z2 - z1)
+                    t = dz / u
+                    dx = mean_vx * t
+                    dy = mean_vy * t
+                    dp = np.array([dx, dy])
+                    self.delta_p[i,j] = dp
+                    self.delta_p[j,i] = dp
