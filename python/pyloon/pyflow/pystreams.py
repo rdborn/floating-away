@@ -19,6 +19,9 @@ class JetStream:
         self.magnitude = parsekw(kwargs, 'magnitude', 0)
         self.direction = parsekw(kwargs, 'direction', 0)
 
+    def set_id(self, id):
+        self.id = id
+
 class JetStreamIdentifier:
     def __init__(self, *args, **kwargs):
         self.X = parsekw(kwargs, 'data', None)
@@ -209,8 +212,8 @@ class VarThresholdIdentifier(JetStreamIdentifier):
         n = np.zeros(len(self.stream_ids))
         # Initialize the maximum and minimum altitudes data structures as empty
         # arrays with the same length as number of jetstreams
-        alt_min = np.zeros(len(self.stream_ids))
-        alt_max = np.zeros(len(self.stream_ids))
+        alt_min = np.inf * np.ones(len(self.stream_ids))
+        alt_max = -np.inf * np.ones(len(self.stream_ids))
         # For each data point...
         for x in self.cluster_labels:
             # Identify which cluster the data point belongs to
@@ -251,6 +254,31 @@ class VarThresholdIdentifier(JetStreamIdentifier):
                 # Return this jetstream
                 return jet
         print("Jetstream not found. Can't return anything.")
+
+    def find_adjacent(self, z, search_dir):
+        jets = self.jetstreams.values()
+        this_jetstream = self.find(z)
+        adjacent_jetstream = self.find(z)
+        min_gap_size = np.inf
+        if search_dir >= 0:
+            this_max_alt = this_jetstream.max_alt
+            for jet in jets:
+                gap_size = jet.min_alt - this_max_alt
+                if gap_size > 0 and gap_size < min_gap_size:
+                    min_gap_size = gap_size
+                    adjacent_jetstream = jet
+            if adjacent_jetstream.max_alt == this_max_alt:
+                print("No adjacent jetstream in requested direction. Returning current jetstream")
+        else:
+            this_min_alt = this_jetstream.min_alt
+            for jet in jets:
+                gap_size = this_min_alt - jet.max_alt
+                if gap_size > 0 and gap_size < min_gap_size:
+                    min_gap_size = gap_size
+                    adjacent_jetstream = jet
+            if adjacent_jetstream.min_alt == this_min_alt:
+                print("No adjacent jetstream in requested direction. Returning current jetstream")
+        return adjacent_jetstream
 
     def plot(self):
         print(self.n_clusters)

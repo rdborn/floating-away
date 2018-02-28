@@ -388,9 +388,9 @@ class WindAwarePlanner(LoonPathPlanner):
         """
         Initialize a wind-aware path planner for a balloon.
 
-        kwarg 'field' is the pyflow.flowfields.FlowField used in this simulation.
-        kwarg 'lower' is the lowest allowable altitude.
-        kwarg 'upper' is the highest allowable altitude.
+        kwarg 'field' pyflow.flowfields.FlowField used in this simulation.
+        kwarg 'lower' lowest allowable altitude.
+        kwarg 'upper' highest allowable altitude.
         kwarg 'streamres' number of points to sample from air column.
         kwarg 'streammin' minimum altitude from which to sample.
         kwarg 'streammax' maximum altitude from which to sample.
@@ -514,57 +514,97 @@ class WindAwarePlanner(LoonPathPlanner):
         return theta
 
     def __find_best_jetstream__(self, loon, pstar, u):
+        """
+        Consider each jetstream and choose which one would be best to travel to.
+
+        parameter loon balloon object on which to plan
+        parameter pstar goal position
+        parameter u control effort (i.e. vertical velocity magnitude)
+        return lowest cost jetstream and its cost
+        """
+
+        # SETTING UP/INITIALIZATIONS:
+        # Get the number of jetstreams
         n_streams = len(self.jets.jetstreams)
+        # Initialize the terminal cost of each jetstream to inf
         J_jetstreams = np.inf * np.ones(n_streams)
+        # Initialize the fuel cost to travel to each jetstream to inf
         J_fuel_jetstreams = np.inf * np.ones(n_streams)
+        # Initialize the total cost of each jetstream to inf
         J = np.inf * np.ones(n_streams)
+        # Get the balloon's position
         pos = loon.get_pos()
         x_loon = pos[0]
         y_loon = pos[1]
+        # Initialize the altitudes of each jetstream to zero
         z_jets = np.zeros(n_streams)
+        # Arbitrarily initialize the best jetstream to the first jetstream
         best_jet = self.jets.jetstreams.values()[0]
+        # Initialize the total cost of the best jetstream to inf
         best_J = np.inf
+
+        # SEARCHING FOR THE JETSTREAM WITH THE LOWEST TOTAL COST:
+        # For each jetstream...
         for i, jet in enumerate(self.jets.jetstreams.values()):
+            # Store the jetstream's altitude
             z_jets[i] = jet.avg_alt
+            # Find the change in lateral and vertical position to travel to this
+            # this jetstream
             dp, dz = self.__cost_to_altitude__(loon, z_jets[i], u)
+            # Find the new position the balloon would be at after traveling to
+            # this jetstream
             dx = dp[0]
             dy = dp[1]
             new_pos = np.array([dx, dy, dz]) + pos
+            # Calculate the fuel cost of traveling to this jetstream as the
+            # vertical distance to it (scaled)
             J_fuel_jetstreams[i] = dz*1e-3
+            # Calculate the terminal cost of this jetstream
             J_jetstreams[i] = self.__cost_of_jetstream__(new_pos, pstar, jet)
+            # Calculate the total cost of choosing this jetstream as the sum
+            # of the fuel cost and terminal cost
             J[i] = J_fuel_jetstreams[i] + J_jetstreams[i]
+            # If this is the best jetstream we've considered so far...
             if J[i] < best_J:
+                # Update the best cost and best jetstream variables appropriately
                 best_J = J[i]
                 best_jet = jet
             print("Alt: " + str(jet.avg_alt) + "\t\tJf: " + str(np.int(J_fuel_jetstreams[i])) + "\t\tJj: " + str(np.int(J_jetstreams[i])))
+
+        # Return the jetstream with the smallest total cost and its cost
         return best_jet, best_J
 
     def __phiddot__(self, p, phat, pdot):
+        """
+        Calculate the acceleration towards the origin
+
+        parameter p position at which to perform calculation
+        parameter phat unit vector along p
+        parameter pdot velocity at which to perform calculation
+        return acceleration toward the origin
+        """
+
+        # TODO: Extend this to be acceleration towards a set point
+
+        # Find velocity towards origin
         phidot = np.dot(phat, pdot) * phat
+        # Find acceleration towards origin
         phiddot = (((np.linalg.norm(pdot)**2 - 2 * np.linalg.norm(phidot)**2)) * phat + np.linalg.norm(phidot) * pdot) / np.linalg.norm(p)
+        # Return acceleration towards origin
         return phiddot
 
-    # def __costs_of_each_jetstream__(self, loon, pstar):
-    #     pos = np.array(loon.get_pos())
-    #     p = pos[0:2]
-    #     z_loon = pos[2]
-    #     phat = p / np.linalg.norm(p)
-    #     vals = np.array(self.jets.jetstreams.values())
-    #     z = vals[:,0]
-    #     magnitude = vals[:,1]
-    #     direction = vals[:,2]
-    #     vx = magnitude * np.cos(direction)
-    #     vy = magnitude * np.sin(direction)
-    #     pdots = np.squeeze(np.array([vx, vy]).T)
-    #     pstar = pstar[0:2]
-    #     phi = p - pstar
-    #     J = np.inf * np.ones(len(pdots))
-    #     for i, pdot in enumerate(pdots):
-    #         phiddot = self.__phiddot__(p, phat, pdot)
-    #         J[i] = np.dot(p, p) + np.dot(p, pdot) + np.dot(phiddot, phiddot) # + (z_loon - z[i])**2
-    #     return J, z
-
     def __cost_of_jetstream__(self, pos, pstar, jet):
+        """
+        Calculate the terminal cost of the given jetstream at the given position
+        for the given set point.
+
+        parameter pos position at which to calculate cost of jetstream
+        parameter pstar set point/goal position
+        parameter jet jetstream for which to calculate cost
+        return terminal cost of jet at pos for pstar
+        """
+
+        # SETTING UP/INITIALIZATION
         # Get the balloon's current position and store its lateral and vertical
         # positions separately
         # pos = np.array(loon.get_pos())
@@ -589,62 +629,276 @@ class WindAwarePlanner(LoonPathPlanner):
         phihat = phi / np.linalg.norm(phi)
         # Calculate the acceleration of the balloon towards the origin
         phiddot = self.__phiddot__(p, phat, pdot)
+
+        # CALCULATE COST:
         # Calculate the cost of this jetstream at this position with this goal
         # position as...
-        # + the magnitude of the distance from the goal
-        #       (encouragement to be near the goal)
-        # + velocity away from the goal
-        #       (encouragement to move towards the goal)
-        # + the magnitude of the acceleration towards the goal
-        #       (encouragement to move in a controlled manner with respect to the goal)
-        # print("phi: " + str(phi) + "\t\tpdot: " + str(pdot))
         J_position = np.sqrt(np.dot(phi, phi))*1e-3*0
         J_velocity = (np.dot(phihat, pdothat)+1)*np.linalg.norm(p)*1e-1
         J_accel = np.dot(phiddot, phiddot)*0
         J = J_position + J_velocity + J_accel
+
         # Return the calculated cost
         return J
 
-    # def __dp_btwn_jetstreams__(self, loon, pstar, u):
-    #     vals = np.array(self.jets.jetstreams.values())
-    #     altitude = vals[:,0]
-    #     dp_next = np.zeros([len(altitude),2])
-    #     dp = np.zeros([len(altitude), len(altitude), 2])
-    #     for i, z in enumerate(altitude):
-    #         if (len(altitude) - i) > 1:
-    #             z_test = np.linspace(z[i], z[i+1], 100)
-    #             vx, vy = self.ev(z_test)
-    #             mean_vx = np.mean(vx)
-    #             mean_vy = np.mean(vy)
-    #             dz = z[i+1] - z[i]
-    #             t = dz / u
-    #             dx = mean_vx * t
-    #             dy = mean_vy * t
-    #             dp_next[i] = np.array([dx, dy])
-    #     for i in range(len(dp_next)):
-    #         for j in range(i, len(dp_next)):
-    #             dp_ij = 0.0
-    #             for k in range(i, j):
-    #                 dp_ij += dp_next[k]
-    #             dp[i,j] = dp_ij
-    #             dp[j,i] = dp_ij
-    #     self.dp_jetstreams = dp
-    #     return dp
-
     def __cost_to_altitude__(self, loon, z, u):
+        """
+        Calculate the lateral and vertical displacements incurred during a
+        transit from the balloon's current position to the given target altitude.
+
+        parameter loon balloon for which to calculate displacements
+        parameter z target altitude
+        parameter u control effort during transit (constant)
+        return lateral and vertical displacement incurred during transit
+        """
+
+        # SETTING UP/INITIALIZATION
+        # Get the balloon's current position
         pos = loon.get_pos()
         z_loon = pos[2]
+        # Generate test points from loon's current position to target altitude
         N = 500
         x_test = np.zeros(N)
         y_test = np.zeros(N)
         z_test = np.linspace(z_loon, z, N)
         p_test = np.array([x_test, y_test, z_test])
+        # Get wind velocities at each test point
         vx, vy = self.ev(p_test)
+        # Find the mean wind velocity across all test points
         mean_vx = np.mean(vx)
         mean_vy = np.mean(vy)
+
+        # CALCULATE DISPLACEMENTS
+        # Find the change in altitude from the loon's current position to
+        # target altitude
         dz = abs(z - z_loon)
+        # Find the time required to travel to the target altitude given
+        # control effort u
         t = dz / u
+        # Find the change in lateral position incurred during the transit to
+        # the target altitude
         dx = mean_vx * t
         dy = mean_vy * t
         dp = np.array([dx, dy])
+
+        # Return the lateral and vertical displacement to travel from the loon's
+        # current position to the target altitude
         return dp, dz
+
+class MPCWAP(WindAwarePlanner):
+    def plan(self, loon, u, T, pstar, depth):
+        """
+        Find the best sequence of jetstreams to which to travel. Balloon can
+        only move to adjacent jetstreams.
+
+        parameter loon balloon for which to plan
+        parameter u control effort (constant during transit between jetstreams)
+        parameter T length of time to stay at current jetstream for the 'stay' option
+        parameter pstar set point/goal position
+        parameter depth length of jetstream sequences for consideration
+        return sequence of jetstreams that has the smallest total cost
+        """
+        # Initialize a dictionary to store the potential sequences of jetstreams,
+        # indexed by their cost
+        self.sequences = dict()
+        # Conduct a recursive tree search to populate the sequences dictionary
+        self.__tree_search__(loon, u, T, pstar, depth, 0.0, np.array([]))
+        # Find the minimum cost among the possible sequences
+        min_J = np.min(self.sequences.keys())
+        # Find the sequence/policy associated with the minimum cost
+        best_pol = self.sequences[min_J]
+        # Return the minimum cost policy
+        return best_pol
+
+    def __tree_search__(self, loon, u, T, pstar, depth, J, policy):
+        """
+        Recursively find the cost of every possible sequence of jetstreams of
+        a given length. Balloon can only move to adjacent jetstreams.
+
+        parameter loon balloon for which to plan
+        parameter u control effort (constant during transit between jetstreams)
+        parameter T length of time to stay at current jetstream for the 'stay' option
+        parameter pstar set point/goal position
+        parameter depth length of jetstream sequences for consideration
+        """
+        # Base case
+        if depth == 0:
+            # Index this policy by its cost and store it
+            self.sequences[J] = policy
+            # Do nothing else
+            return
+
+        # Find the cost of moving up, down, or staying put
+        up_cost, up_loon = self.__cost_2_move__(loon, u, pstar)
+        down_cost, down_loon = self.__cost_2_move__(loon, -u, pstar)
+        stay_cost, stay_loon = self.__cost_2_stay__(loon, T, pstar)
+
+        # Get jetstream loon will move to if it goes up, down, or stays put
+        up_jet = self.jets.find(up_loon.get_pos()[2])
+        down_jet = self.jets.find(down_loon.get_pos()[2])
+        stay_jet = self.jets.find(stay_loon.get_pos()[2])
+
+        # Append policy-so-far with moving up, down, or staying put
+        up_policy = np.append(np.array(policy), np.array([up_jet.avg_alt]))
+        down_policy = np.append(np.array(policy), np.array([down_jet.avg_alt]))
+        stay_policy = np.append(np.array(policy), np.array([stay_jet.avg_alt]))
+
+        # Recursive calls
+        self.__tree_search__(up_loon, u, T, pstar, depth-1, J+up_cost, up_policy)
+        self.__tree_search__(down_loon, u, T, pstar, depth-1, J+down_cost, down_policy)
+        self.__tree_search__(stay_loon, u, T, pstar, depth-1, J+stay_cost, stay_policy)
+
+    def __cost_2_move__(self, loon, u, pstar):
+        """
+        Calculate cost associated with moving to an adjacent jetstream, whether
+        to move up or down is indicated by the sign of the given control effort.
+
+        parameter loon balloon for which to calculate cost
+        parameter u control effort (constant during transit)
+        parameter pstar set point/goal position
+        return cost of moving to adjacent jetstream and propogated loon
+        """
+
+        # SETTING UP/INITIALIZATION
+        # Get balloon's current position
+        pos = loon.get_pos()
+        z = pos[2]
+        # Get the jet stream the balloon is in currently and the one directly
+        # above or below, depending on the given control effort
+        curr_jetstream = self.jets.find(z)
+        next_jetstream = self.jets.find_adjacent(z, u)
+        # Get the altitude of the adjacent jetstream
+        target_alt = next_jetstream.avg_alt
+        # Copy the balloon so we can modify it without fear
+        test_loon = copy.deepcopy(loon)
+        # If the find_adjacent() function returned the current jetstream
+        # instead of the adjacent one, that means we are at the edge of the air
+        # column and there is no jetstream adjacent to us. Return a cost of inf
+        if target_alt == curr_jetstream.avg_alt:
+            print("No jetstream in that direction. Returning cost of inf")
+            return np.inf, test_loon
+
+        # FIND COST TO MOVE TO ADJACENT JETSTREAM
+        # Get the copied loon's position
+        test_pos = test_loon.get_pos()
+        # Initialize the cost and simulation time to 0
+        J_pos = 0.0
+        dt = 0.0
+        # While we have not reached the next jetstream...
+        while (target_alt - test_pos[2]) * np.sign(u) > 0:
+            # Get the wind velocity at the test loon's current position
+            vx, vy = self.ev(test_pos)
+            # Propogate the test loon's dynamisc
+            test_loon.update(vx=vx, vy=vy, vz=u)
+            # Update the positon of the test loon
+            test_pos = test_loon.get_pos()
+            # Get the new displacement from the set point
+            dp = pstar - test_pos
+            # Calculate the cost associated with the current displacement from
+            # the set point and add it to the integrated cost
+            J_pos += np.sum((dp[0:2])**2)
+            # Update the simulation time
+            dt += 1.0 / loon.Fs
+        # Update the integrated cost to the the root-mean-squared cost over the
+        # course of the simulation.
+        J_pos = np.sqrt(J_pos / dt)
+        # Calculate the terminal cost of arriving at this jetstream
+        J_vel = WindAwarePlanner.__cost_of_jetstream__(self, test_pos, pstar, next_jetstream)
+        # Calculate the total cost of moving to this jetstream as the sum of the
+        # root-mean-square position cost, terminal cost, and cost of fuel to
+        # move to this jetstream
+        J = (J_pos + J_vel + (target_alt - z)**2*1e-5)
+
+        # Return the total cost and the propogated test loon
+        return J, test_loon
+
+    def __cost_2_stay__(self, loon, T, pstar):
+        pos = loon.get_pos()
+        z = pos[2]
+        curr_jetstream = self.jets.find(z)
+        test_loon = copy.deepcopy(loon)
+        test_pos = test_loon.get_pos()
+        vx, vy = self.ev(test_pos)
+        J_pos = 0
+        dt = 0
+        while (T - dt) > 0:
+            test_loon.update(vx=vx, vy=vy)
+            test_pos = test_loon.get_pos()
+            dp = pstar - test_pos
+            J_pos += np.sum((dp[0:2])**2)
+            dt += 1.0 / loon.Fs
+        J_pos = np.sqrt(J_pos / dt)
+        J_vel = WindAwarePlanner.__cost_of_jetstream__(self, test_pos, pstar, curr_jetstream)
+        J = (J_pos + J_vel)
+        return J, test_loon
+
+    def __delta_p_between_jetstreams__(self, u):
+        jets = self.jets.jetstreams.values()
+        for jet1 in jets:
+            for jet2 in jets:
+                if jet1.avg_alt != jet2.avg_alt:
+                    pass
+
+class MPCWAPFast(WindAwarePlanner):
+    def plan(self, loon, u, T, pstar, depth):
+        self.sequences = dict()
+        self.__tree_search__(loon.get_pos(), u, T, pstar, depth, 0.0, np.array([]))
+        min_J = np.min(self.sequences.keys())
+        # print(self.sequences.keys())
+        # print(np.array(self.sequences.values()))
+        best_pol = self.sequences[min_J]
+        # print(self.sequences.keys())
+        # print(np.array(self.sequences.values()))
+        return best_pol
+
+    def __tree_search__(self, pos, u, T, pstar, depth, J, policy):
+        if depth == 0:
+            self.sequences[J] = policy
+            return
+        this_jet = self.jets.find(pos[2])
+        j = this_jet.id
+        jets = self.jets.jetstreams.values()
+        for i, jet in enumerate(jets):
+            target_alt = jet.avg_alt
+            if i == j:
+                magnitude = jet.magnitude
+                direction = jet.direction
+                vx = magnitude * np.cos(direction)
+                vy = magnitude * np.sin(direction)
+                dp = np.array([vx, vy]) * T
+                J_fuel = 0.0
+            else:
+                dp = self.delta_p[i,j]
+                J_fuel = (target_alt - pos[2])**2*1e-6
+            new_pos = np.append(pos[0:2] + dp, target_alt)
+            J_pos = np.sqrt(np.sum((new_pos[0:2] - pstar[0:2])**2))*1e-2
+            J_vel = WindAwarePlanner.__cost_of_jetstream__(self, new_pos, pstar, jet)*1e1
+            J_i = J_pos + J_vel + J_fuel + J
+            policy_i = np.append(np.array(policy), np.array(target_alt))
+            # print(str(np.floor(target_alt)) + "\t\tJpos: " + str(np.floor(J_pos)) + "\t\tJvel: " + str(np.floor(J_vel)) + "\t\tJfuel: " + str(np.floor(J_fuel)) + "\t\tJ: " + str(np.floor(J_i)))
+            self.__tree_search__(new_pos, u, T, pstar, depth-1, J_i, policy_i)
+
+    def __delta_p_between_jetstreams__(self, u):
+        jets = self.jets.jetstreams.values()
+        self.delta_p = np.zeros([len(jets),len(jets),2])
+        N = 500
+        x_test = np.zeros(N)
+        y_test = np.zeros(N)
+        for i, jet1 in enumerate(self.jets.jetstreams.values()):
+            jet1.set_id(i)
+            for j, jet2 in enumerate(self.jets.jetstreams.values()):
+                if i < j:
+                    z1 = jet1.avg_alt
+                    z2 = jet2.avg_alt
+                    z_test = np.linspace(z1, z2, N)
+                    p_test = np.array([x_test, y_test, z_test])
+                    vx, vy = self.ev(p_test)
+                    mean_vx = np.mean(vx)
+                    mean_vy = np.mean(vy)
+                    dz = abs(z2 - z1)
+                    t = dz / u
+                    dx = mean_vx * t
+                    dy = mean_vy * t
+                    dp = np.array([dx, dy])
+                    self.delta_p[i,j] = dp
+                    self.delta_p[j,i] = dp
