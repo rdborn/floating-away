@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 from sklearn.gaussian_process import GaussianProcessRegressor as GPR
 from sklearn.gaussian_process.kernels import RBF, Matern, WhiteKernel, ConstantKernel as C
 import copy
@@ -877,6 +878,227 @@ class MPCWAPFast(WindAwarePlanner):
             policy_i = np.append(np.array(policy), np.array(target_alt))
             # print(str(np.floor(target_alt)) + "\t\tJpos: " + str(np.floor(J_pos)) + "\t\tJvel: " + str(np.floor(J_vel)) + "\t\tJfuel: " + str(np.floor(J_fuel)) + "\t\tJ: " + str(np.floor(J_i)))
             self.__tree_search__(new_pos, u, T, pstar, depth-1, J_i, policy_i)
+
+    def __delta_p_between_jetstreams__(self, u):
+        jets = self.jets.jetstreams.values()
+        self.delta_p = np.zeros([len(jets),len(jets),2])
+        N = 500
+        x_test = np.zeros(N)
+        y_test = np.zeros(N)
+        for i, jet1 in enumerate(self.jets.jetstreams.values()):
+            jet1.set_id(i)
+            for j, jet2 in enumerate(self.jets.jetstreams.values()):
+                if i < j:
+                    z1 = jet1.avg_alt
+                    z2 = jet2.avg_alt
+                    z_test = np.linspace(z1, z2, N)
+                    p_test = np.array([x_test, y_test, z_test])
+                    vx, vy = self.ev(p_test)
+                    mean_vx = np.mean(vx)
+                    mean_vy = np.mean(vy)
+                    dz = abs(z2 - z1)
+                    t = dz / u
+                    dx = mean_vx * t
+                    dy = mean_vy * t
+                    dp = np.array([dx, dy])
+                    self.delta_p[i,j] = dp
+                    self.delta_p[j,i] = dp
+
+class LocalDynamicProgrammingPlanner(WindAwarePlanner):
+    def __init__(self, *args, **kwargs):
+        pstar = parsekw(kwargs, 'pstar', np.zeros(3))
+        dp = parsekw(kwargs, 'dp', np.zeros(3))
+        dt = parsekw(kwargs, 'dt', 180.0)
+        dims = parsekw(kwargs, 'dims', np.ones(3))
+        gamma = parsekw(kwargs, 'gamma', 0.9)
+        u = parsekw(kwargs, 'u', 5.0)
+        WindAwarePlanner.__init__(  self,
+                                    field=kwargs.get('field'),
+                                    lower=kwargs.get('lower'),
+                                    upper=kwargs.get('upper'),
+                                    streamsize=kwargs.get('streamsize'))
+        np.set_printoptions(threshold='nan')
+        self.dp = dp
+        self.pstar = pstar
+        self.__setup__(pstar, dp, dims)
+        self.__delta_p_between_jetstreams__(u)
+        self.__T_all__(u, dt)
+        self.__R_all__(pstar)
+        self.__policy_iteration__(u, pstar, gamma, dt)
+
+    def plan(self, loon):
+        state, i = self.__get_nearest_state__(loon.get_pos())
+        return self.policy[i]
+
+    def __setup__(self, pstar, dp, dims):
+        """
+        parameter dims 3-element vector, number of discrete elements in each direction
+        """
+        # Setup discretized action space (i.e. jetstreams)
+        self.__setup_action_space__()
+        # Setup discretized state space
+        dims[2] = len(self.action_space)
+        self.__setup_state_space__(pstar, dp, dims)
+        # Setup policy container (3D matrix)
+        self.policy = self.action_space[0] * np.ones(len(self.state_space))
+        pass
+
+    def __setup_state_space__(self, pstar, dp, dims):
+        x = np.linspace(pstar[0] - dp[0], pstar[0] + dp[0], dims[0])
+        y = np.linspace(pstar[1] - dp[1], pstar[1] + dp[1], dims[1])
+        # z = np.linspace(pstar[2] - dp[2], pstar[2] + dp[2], dims[2])
+        z = self.action_space
+        states = np.meshgrid(x, y, z)
+        n = np.prod(dims)
+        m = len(dims)
+        print(n)
+        self.state_space = np.reshape(states, [m, n]).T
+        self.state_space = np.append(self.state_space, [np.inf * np.ones(3)], axis=0)
+
+    def __setup_action_space__(self):
+        jetstreams = self.jets.jetstreams.values()
+        n = len(jetstreams)
+        actions = np.zeros(n)
+        for i, jetstream in enumerate(jetstreams):
+            actions[i] = jetstream.avg_alt
+        self.action_space = actions
+
+    def __policy_iteration__(self, u, pstar, gamma, dt):
+        prev_policy = copy.deepcopy(self.policy) + 1
+        while not (prev_policy == self.policy).all():
+            print(np.floor(self.policy.T))
+            prev_policy = copy.deepcopy(self.policy)
+            print("T_pi...")
+            T_pi = self.__T_pi__(u, dt)
+            print("R_pi...")
+            R_pi = self.__R_pi__(pstar)
+            print("V_pi...")
+            V_pi = self.__V_pi__(T_pi, R_pi, gamma)
+            for i, state in enumerate(self.state_space):
+                if i % 100 == 0:
+                    print("\t" + str(i) + "/" + str(len(self.state_space)))
+                best_action = state[2]
+                best_V = -np.inf
+                for j, action in enumerate(self.action_space):
+                    T = self.T[i,j]
+                    R = self.R[i,j]
+                    V = R + gamma * T * V_pi
+                    if V > best_V:
+                        best_V = V
+                        best_action = action
+                self.policy[i] = best_action
+
+    def __V_pi__(self, T, R, gamma):
+        I = np.eye(len(self.state_space))
+        M = (np.matrix(I) - gamma * np.matrix(T))**(-1)
+        V = M * np.matrix(R).T
+        return V
+
+    def __R_pi__(self, pstar):
+        R = np.zeros(len(self.state_space))
+        for i, state in enumerate(self.state_space):
+            action = self.policy[i]
+            for j, a in enumerate(self.action_space):
+                if (a - action) < 1e-3:
+                    R[i] = self.R[i,j]
+                    break
+        return R
+
+    def __T_pi__(self, u, dt):
+        T = np.zeros([len(self.state_space), len(self.state_space)])
+        for i, state in enumerate(self.state_space):
+            action = self.policy[i]
+            for j, a in enumerate(self.action_space):
+                if (a - action) < 1e-3:
+                    T[i] = self.T[i,j]
+                    break
+        return T
+
+    def __R__(self, s, a, pstar):
+        if (s == np.inf).any():
+            return -1e12
+        jetstream = self.jets.find(s[2])
+        J_pos = np.sqrt(np.sum((pstar[0:2] - s[0:2])**2))*1e-2
+        J_vel = WindAwarePlanner.__cost_of_jetstream__(self, s, pstar, jetstream)*1e1
+        J_fuel = (a - s[2])**2*1e-6
+        J = J_pos + J_vel + J_fuel
+        R = -J
+        return R
+
+    def __T__(self, s, a, u, dt):
+        T = np.zeros(len(self.state_space))
+        if (s == np.inf).any():
+            T[-1] = 1
+            return T
+        jetstream_s = self.jets.find(s[2])
+        jetstream_a = self.jets.find(a)
+        alt_s = jetstream_s.avg_alt
+        alt_a = jetstream_a.avg_alt
+        if abs(alt_s - alt_a) < 1e-3:
+            pos = s
+            new_state, idx = self.__get_nearest_state__(pos)
+            out_of_range = False
+            while (new_state == s).all() and not out_of_range:
+                pos += jetstream_s.ride_for_dt(dt)
+                new_state, idx = self.__get_nearest_state__(pos)
+                out_of_range = (np.array(idx) < 0).any()
+        else:
+            dp = self.delta_p[jetstream_s.id, jetstream_a.id]
+            dz = alt_a - alt_s
+            new_state = s + np.append(dp, dz)
+            new_state, idx = self.__get_nearest_state__(new_state)
+        T[idx] = 1
+        return T
+
+    def __T_all__(self, u, dt):
+        n = len(self.state_space)
+        m = len(self.action_space)
+        self.T = np.zeros([n, m, n])
+        print("T_all...")
+        for i, state in enumerate(self.state_space):
+            if i % 100 == 0:
+                print("\t" + str(i) + "/" + str(len(self.state_space)))
+            for j, action in enumerate(self.action_space):
+                self.T[i,j] = self.__T__(state, action, u, dt)
+
+    def __R_all__(self, pstar):
+        n = len(self.state_space)
+        m = len(self.action_space)
+        self.R = np.zeros([n, m])
+        print("R_all...")
+        for i, state in enumerate(self.state_space):
+            if i % 100 == 0:
+                print("\t" + str(i) + "/" + str(len(self.state_space)))
+            for j, action in enumerate(self.action_space):
+                self.R[i,j] = self.__R__(state, action, pstar)
+
+    def __get_nearest_state__(self, s):
+        out_of_range = np.linalg.norm(self.dp) < np.linalg.norm(self.pstar - s)
+        if out_of_range:
+            return self.state_space[-1], -1
+        min_d = np.inf
+        nearest_state = np.zeros(len(s))
+        nearest_idx = 0
+        d = np.sum((s - self.state_space)**2, axis=1)
+        min_d = np.min(d)
+        idx = (d == min_d)
+        state = self.state_space[idx]
+        return state, idx
+
+    def plot(self, u, dt):
+        policy_plot = plt.figure().gca(projection='3d')
+        for i, state in enumerate(self.state_space):
+            if i % 100 == 0:
+                print("\t" + str(i) + "/" + str(len(self.state_space)))
+            T = np.array(self.__T__(state, self.policy[i], u, dt), dtype=bool)
+            next_state = np.squeeze(np.array(self.state_space[T]))
+            # if (state == next_state).all() or (next_state == np.inf).any():
+                # print("WHAT")
+            x = np.array([state[0], next_state[0]])
+            y = np.array([state[1], next_state[1]])
+            z = np.array([state[2], next_state[2]])
+            policy_plot.plot(x, y, z)
+        plt.show()
 
     def __delta_p_between_jetstreams__(self, u):
         jets = self.jets.jetstreams.values()
