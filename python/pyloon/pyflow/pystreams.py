@@ -22,6 +22,14 @@ class JetStream:
     def set_id(self, id):
         self.id = id
 
+    def ride_for_dt(self, dt):
+        vx = self.magnitude * np.cos(self.direction)
+        vy = self.magnitude * np.sin(self.direction)
+        vz = 0.0
+        v = np.array([vx, vy, vz])
+        dp = dt * v
+        return dp
+
 class JetStreamIdentifier:
     def __init__(self, *args, **kwargs):
         self.X = parsekw(kwargs, 'data', None)

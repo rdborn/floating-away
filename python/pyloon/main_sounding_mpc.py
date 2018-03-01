@@ -2,6 +2,7 @@ from loonsim import LoonSim
 from optiloon.loonpathplanner import MonteCarloPlanner as MCP
 from optiloon.loonpathplanner import PlantInvertingController as PIC
 from optiloon.loonpathplanner import MPCWAPFast as WAP
+from optiloon.loonpathplanner import LocalDynamicProgrammingPlanner as LDPP
 import numpy as np
 from pandas import DataFrame
 from matplotlib import pyplot as plt
@@ -12,50 +13,65 @@ hz = 0.2
 duration = 6
 
 # Set up flow field
-# file = "./weather-data/oak_2017_07_01_00z.txt"
-file = "./weather-data/oak_2018_02_08_00z.txt"
-LS = LoonSim(file=file, Fs=hz, xi=0.0, yi=0.0, zi=15000.0)
+file = "./weather-data/oak_2017_07_01_00z.txt"
+# file = "./weather-data/oak_2018_02_08_00z.txt"
+LS = LoonSim(file=file, Fs=hz, xi=0.0, yi=0.0, zi=10000.0, plot=True)
 
 # Set point
-pstar = np.array([0.0, 0.0, 13000.0])
+pstar = np.array([0.0, 0.0, 17500.0])
 
 last_pos = LS.loon.get_pos()
 pos = last_pos
-LPP = WAP(	field=LS.field,
+# LPP = WAP(	field=LS.field,
+# 			lower=5000,
+# 			upper=30000,
+# 			streamsize=5)
+# LPP.__delta_p_between_jetstreams__(5.0)
+
+LPP = LDPP(	field=LS.field,
 			lower=5000,
 			upper=30000,
-			streamsize=5)
+			streamsize=5,
+			pstar=pstar,
+			dp=np.array([100000, 100000, 50000]),
+			dt=180.0,
+			dims=np.array([20, 20, 10]),
+			gamma=0.9)
 
-LPP.__delta_p_between_jetstreams__(5.0)
+# print("plotting...")
+# LPP.plot(5.0, 180.0)
+# while(True):
+	# pass
 
 # Simulation
 while(True):
 	u = 5.0
 	T = 180.0
-	depth = 3
-	N = 3
-	pol = LPP.plan(LS.loon, u, T, pstar, depth)
+	# depth = 3
+	# N = 3
+	# pol = LPP.plan(LS.loon, u, T, pstar, depth)
+	pol = LPP.plan(LS.loon)
 	pos = LS.loon.get_pos() # get balloon's position
 	buffer = 100.0
 	print(pos)
 	print(pol)
-	for i in range(N):
-		u = 5.0
-		if pol[i] - pos[2] > buffer:
-			u = u
-		elif pol[i] - pos[2] < -buffer:
-			u = -u
-		else:
-			u = 0.0
-		if u == 0:
-			dt = 0.0
-			while (T - dt) > 0.0:
-				LS.propogate(u)
-				dt += 1.0 / LS.loon.Fs
-		else:
-			while (pol[i] - pos[2]) * u > 0:
-				LS.propogate(u)
-				pos = LS.loon.get_pos()
+	# for i in range(N):
+	u = 5.0
+	if pol - pos[2] > buffer:
+		u = u
+	elif pol - pos[2] < -buffer:
+		u = -u
+	else:
+		u = 0.0
+	if u == 0:
+		dt = 0.0
+		while (T - dt) > 0.0:
+			LS.propogate(u)
+			dt += 1.0 / LS.loon.Fs
+	else:
+		while (pol - pos[2]) * u > 0:
+			LS.propogate(u)
+			pos = LS.loon.get_pos()
 	LS.plot()
 
 ########################################
