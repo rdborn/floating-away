@@ -9,7 +9,6 @@ from copy import deepcopy
 import os, sys, inspect
 sys.path.insert(1, os.path.join(sys.path[0],'..'))
 
-from pyloon.multiinputloon import MultiInputLoon as Loon
 from pyutils.pyutils import parsekw, hash3d, hash4d, rng, downsize
 from pyutils import pyutils
 from pyflow.pystreams import VarThresholdIdentifier as JSI
