@@ -262,6 +262,13 @@ class VarThresholdIdentifier(JetStreamIdentifier):
                 # Return this jetstream
                 return jet
         print("Jetstream not found. Can't return anything.")
+        return_jet = JetStream( avg_alt=0,
+                                min_alt=0,
+                                max_alt=0,
+                                magnitude=0,
+                                direction=0)
+        return_jet.set_id(-1)
+        return return_jet
 
     def find_adjacent(self, z, search_dir):
         jets = self.jetstreams.values()

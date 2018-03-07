@@ -5,6 +5,7 @@ from optiloon.loonpathplanner import MPCWAPFast as WAP
 import numpy as np
 from pandas import DataFrame
 from matplotlib import pyplot as plt
+from matplotlib.mlab import griddata
 from skewt import SkewT
 
 # Set up simulation parameters
@@ -12,9 +13,15 @@ hz = 0.2
 duration = 6
 
 # Set up flow field
-file = "./weather-data/oak_2017_07_01_00z.txt"
-# file = "./weather-data/oak_2018_02_08_00z.txt"
-LS = LoonSim(file=file, Fs=hz, xi=0.0, yi=0.0, zi=10.0, plot=True)
+LS = LoonSim(	origin=np.array([37.5, -120.5]),
+				latspan=600.0,
+				lonspan=600.0,
+				Fs=hz,
+				xi=0.0,
+				yi=0.0,
+				zi=15000.0,
+				plot=True,
+				noaa=True)
 
 # Set point
 pstar = np.array([0.0, 0.0, 17500.0])
@@ -24,8 +31,49 @@ pos = last_pos
 LPP = WAP(	field=LS.field,
 			lower=12000,
 			upper=20000,
-			streamsize=10)
+			streamsize=10,
+			threshold=0.001)
 LPP.__delta_p_between_jetstreams__(5.0)
+
+# altitude = 2000.0
+# while True:
+# 	N = 100
+# 	M = 1500000.0
+# 	     550000
+# 	p = np.linspace(-M, M, N)
+# 	_x = np.zeros(N**2)
+# 	# _x = np.zeros(N)
+# 	_y = np.zeros(N**2)
+# 	# _y = np.zeros(N)
+# 	_c = np.zeros(N**2)
+# 	# _c = np.zeros(N)
+# 	wind_plot = plt.figure().gca()
+# 	for i, x in enumerate(p):
+# 		# pos = np.array([0, 0, x])
+# 		# vx = LPP.GPx.predict(np.atleast_2d(pos), return_std=False)
+# 		# vy = LPP.GPy.predict(np.atleast_2d(pos), return_std=False)
+# 		# magnitude = np.sqrt(vx[0][0]**2 + vy[0][0]**2)
+# 		# _x[i] = x
+# 		# _y[i] = magnitude
+# 		for j, y in enumerate(p):
+# 			pos = np.array([x, y, altitude])
+# 			vx = LPP.GPx.predict(np.atleast_2d(pos), return_std=False)
+# 			vy = LPP.GPy.predict(np.atleast_2d(pos), return_std=False)
+# 			magnitude = np.sqrt(vx[0][0]**2 + vy[0][0]**2)
+# 			_x[i*N + j] = x
+# 			_y[i*N + j] = y
+# 			_c[i*N + j] = magnitude
+# 	# plt.plot(_x, _y)
+# 	# plt.show()
+# 	xplot = np.linspace(np.min(_x), np.max(_x), 100)
+# 	yplot = np.linspace(np.min(_y), np.max(_y), 100)
+# 	X, Y = np.meshgrid(xplot, yplot)
+# 	Z = griddata(_x, _y, _c, xplot, yplot, interp='linear')
+# 	plt.contourf(X, Y, Z)
+# 	plt.colorbar()
+# 	print(altitude)
+# 	plt.show()
+# 	altitude += 2000.0
 
 # Simulation
 while(True):
@@ -55,6 +103,7 @@ while(True):
 			while (pol[i] - pos[2]) * u > 0:
 				LS.propogate(u)
 				pos = LS.loon.get_pos()
+	print(pos)
 	LS.plot()
 
 ########################################

@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.stats import norm
 
 def compare(x1, x2):
     compare_1 = np.array(x1)
@@ -23,7 +24,8 @@ def hash4d(p):
     return (int(p[0]*P0) ^ int(p[1]*P1) ^ int(p[2]*P2) ^ int(p[3]*P3))
 
 def rng(c):
-    return 2 * (0.5 - np.random.rand()) * c
+    # return 2 * (0.5 - np.random.rand()) * c
+    return norm.rvs(scale=c)
 
 def vector_sum(mag1, dir1, mag2, dir2):
     xcomp = mag1 * np.cos(dir1) + mag2 * np.cos(dir2)

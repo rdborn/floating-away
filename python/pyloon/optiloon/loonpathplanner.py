@@ -47,13 +47,25 @@ class LoonPathPlanner:
             fx[i] = np.array([magnitude * np.cos(direction)])
             fy[i] = np.array([magnitude * np.sin(direction)])
             coords[i] = np.array(field.coords[this_key])
+            if np.int(coords[i][2]/1000) == -1:
+                 print( "x: " + str(np.int(coords[i][0]/1000)) + \
+                        "\ty: " + str(np.int(coords[i][1]/1000)) + \
+                        "\tz: " + str(np.int(coords[i][2]/1000)) + \
+                        "\tmag: " + str(np.int(magnitude)) + \
+                        "\tdir: " + str(np.int(direction*180.0/np.pi)))
         self.mask = downsize(coords)
         coords = coords[:,self.mask]
-        kernel = C(1.0, (1e-3, 1e3)) * RBF(0.5, (1e-3, 1e0)) \
-                    + C(1.0, (1e-3, 1e3)) * RBF(15, (1e1, 1e3)) \
-                    + WhiteKernel(1, (1,1))
+        if len(coords[0]) == 1:
+            kernel = C(1.0, (1e-3, 1e3)) * RBF(0.5, (1e-3, 1e0)) \
+                        + C(1.0, (1e-3, 1e3)) * RBF(15, (1e1, 1e3)) \
+                        + WhiteKernel(1, (1,1))
+        else:
+            kernel = C(1.0, (1e-3, 1e3)) * RBF(0.5*np.ones(len(coords[0])), (1e-6, 1e0)) \
+                        + C(1.0, (1e-3, 1e3)) * RBF(15*np.ones(len(coords[0])), (1e1, 1e6)) \
+                        + WhiteKernel(1, (1,1))
         self.GPx = GPR(kernel=kernel, n_restarts_optimizer=9)
         self.GPy = GPR(kernel=kernel, n_restarts_optimizer=9)
+        print(coords.shape)
         print("Training GPx")
         self.GPx.fit(np.atleast_2d(coords), np.atleast_2d(fx).T)
         print("Training GPy")
@@ -85,7 +97,7 @@ class LoonPathPlanner:
         return mean of flow in y direction
         """
         p_pred = np.atleast_2d(np.array(p)[self.mask])
-        p_pred = p_pred.T if np.shape(p_pred)[0] == 1 else p_pred
+        p_pred = p_pred.T if (np.shape(p_pred)[0] != 1 or np.shape(p_pred)[1] > 3) else p_pred
         mean_fx = self.GPx.predict(p_pred, return_std=False)
         mean_fy = self.GPy.predict(p_pred, return_std=False)
         return mean_fx, mean_fy
@@ -403,23 +415,25 @@ class WindAwarePlanner(LoonPathPlanner):
                                     field=kwargs.get('field'),
                                     lower=kwargs.get('lower'),
                                     upper=kwargs.get('upper'))
-        streamres = parsekw(kwargs, 'streamres', 500)
-        streammax = parsekw(kwargs, 'streammax', 0)
-        streammin = parsekw(kwargs, 'streammin', 30000)
-        threshold = parsekw(kwargs, 'threshold', 0.01)
-        streamsize = parsekw(kwargs, 'streamsize', 20)
+        self.streamres = parsekw(kwargs, 'streamres', 500)
+        self.streammax = parsekw(kwargs, 'streammax', 0)
+        self.streammin = parsekw(kwargs, 'streammin', 30000)
+        self.threshold = parsekw(kwargs, 'threshold', 0.01)
+        self.streamsize = parsekw(kwargs, 'streamsize', 20)
+        self.__redo_jetstreams__(np.zeros(3))
 
-        alt = np.linspace(streammin, streammax, streamres)
-        streamdir = np.zeros(streamres)
-        streammag = np.zeros(streamres)
+    def __redo_jetstreams__(self, p):
+        alt = np.linspace(self.streammin, self.streammax, self.streamres)
+        streamdir = np.zeros(self.streamres)
+        streammag = np.zeros(self.streamres)
         for i, z in enumerate(alt):
-        	vx, vy = self.ev(np.array([0, 0, z]))
-        	magnitude = np.sqrt(vx**2 + vy**2)
-        	direction = np.arctan2(vy, vx)
-        	streammag[i] = magnitude
-        	streamdir[i] = np.cos(direction)
+            vx, vy = self.ev(np.array([p[0], p[1], z]))
+            magnitude = np.sqrt(vx**2 + vy**2)
+            direction = np.arctan2(vy, vx)
+            streammag[i] = magnitude
+            streamdir[i] = np.cos(direction)
         data = np.array([streammag, streamdir, alt]).T
-        self.jets = JSI(data=data, threshold=threshold, streamsize=streamsize)
+        self.jets = JSI(data=data, threshold=self.threshold, streamsize=self.streamsize)
 
     def plan(self, loon, pstar):
         """
@@ -429,6 +443,9 @@ class WindAwarePlanner(LoonPathPlanner):
         parameter pstar 3D point, goal location.
         return altitude of center of most desirable jetstream.
         """
+
+        self.__redo_jetstreams__(loon.get_pos())
+        print(self.jets.jetstreams.values())
 
         # vals = np.array(self.jets.jetstreams.values())
         # z_test = vals[:,0]
@@ -842,6 +859,10 @@ class MPCWAP(WindAwarePlanner):
 
 class MPCWAPFast(WindAwarePlanner):
     def plan(self, loon, u, T, pstar, depth):
+        WindAwarePlanner.__redo_jetstreams__(self, loon.get_pos())
+        for jet in self.jets.jetstreams.values():
+            print(str(jet.min_alt) + " - " + str(jet.max_alt))
+        self.__delta_p_between_jetstreams__(u)
         self.sequences = dict()
         self.__tree_search__(loon.get_pos(), u, T, pstar, depth, 0.0, np.array([]))
         min_J = np.min(self.sequences.keys())
@@ -860,24 +881,25 @@ class MPCWAPFast(WindAwarePlanner):
         j = this_jet.id
         jets = self.jets.jetstreams.values()
         for i, jet in enumerate(jets):
-            target_alt = jet.avg_alt
-            if i == j:
-                magnitude = jet.magnitude
-                direction = jet.direction
-                vx = magnitude * np.cos(direction)
-                vy = magnitude * np.sin(direction)
-                dp = np.array([vx, vy]) * T
-                J_fuel = 0.0
-            else:
-                dp = self.delta_p[i,j]
-                J_fuel = (target_alt - pos[2])**2*1e-6
-            new_pos = np.append(pos[0:2] + dp, target_alt)
-            J_pos = np.sqrt(np.sum((new_pos[0:2] - pstar[0:2])**2))*1e-2
-            J_vel = WindAwarePlanner.__cost_of_jetstream__(self, new_pos, pstar, jet)*1e1
-            J_i = J_pos + J_vel + J_fuel + J
-            policy_i = np.append(np.array(policy), np.array(target_alt))
-            # print(str(np.floor(target_alt)) + "\t\tJpos: " + str(np.floor(J_pos)) + "\t\tJvel: " + str(np.floor(J_vel)) + "\t\tJfuel: " + str(np.floor(J_fuel)) + "\t\tJ: " + str(np.floor(J_i)))
-            self.__tree_search__(new_pos, u, T, pstar, depth-1, J_i, policy_i)
+            if jet.avg_alt > self.lower and jet.avg_alt < self.upper:
+                target_alt = jet.avg_alt
+                if i == j:
+                    magnitude = jet.magnitude
+                    direction = jet.direction
+                    vx = magnitude * np.cos(direction)
+                    vy = magnitude * np.sin(direction)
+                    dp = np.array([vx, vy]) * T
+                    J_fuel = 0.0
+                else:
+                    dp = self.delta_p[i,j]
+                    J_fuel = (target_alt - pos[2])**2*1e-6
+                new_pos = np.append(pos[0:2] + dp, target_alt)
+                J_pos = np.sqrt(np.sum((new_pos[0:2] - pstar[0:2])**2))*1e-2
+                J_vel = WindAwarePlanner.__cost_of_jetstream__(self, new_pos, pstar, jet)*1e1
+                J_i = J_pos + J_vel + J_fuel + J
+                policy_i = np.append(np.array(policy), np.array(target_alt))
+                # print(str(np.floor(target_alt)) + "\t\tJpos: " + str(np.floor(J_pos)) + "\t\tJvel: " + str(np.floor(J_vel)) + "\t\tJfuel: " + str(np.floor(J_fuel)) + "\t\tJ: " + str(np.floor(J_i)))
+                self.__tree_search__(new_pos, u, T, pstar, depth-1, J_i, policy_i)
 
     def __delta_p_between_jetstreams__(self, u):
         jets = self.jets.jetstreams.values()

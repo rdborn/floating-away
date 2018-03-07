@@ -1,5 +1,7 @@
 import numpy as np
 import pandas as pd
+from scipy.stats import norm
+from sklearn import neighbors
 
 import os, sys, inspect
 sys.path.insert(1, os.path.join(sys.path[0],'..'))
@@ -7,6 +9,16 @@ sys.path.insert(1, os.path.join(sys.path[0],'..'))
 from pyutils.pyutils import parsekw, hash3d, warning, compare, vector_sum, rng
 from pyutils.constants import M_2_KM, DEG_2_RAD, KNT_2_MPS
 from skewt import SkewT
+from pynoaa.databringer import fetch
+
+KM_2_NAUTMI = 0.539957
+NAUTMI_2_KM = 1.0 / KM_2_NAUTMI
+DEGLAT_2_NAUTMI = 60.0
+NAUTMI_2_DEGLAT = 1.0 / DEGLAT_2_NAUTMI
+M_2_KM = 1e-3
+KM_2_M = 1e3
+M_2_DEGLAT = M_2_KM * KM_2_NAUTMI * NAUTMI_2_DEGLAT
+DEGLAT_2_M = 1.0 / M_2_DEGLAT
 
 class FlowField:
 	def __init__(self, *args, **kwargs):
@@ -67,7 +79,7 @@ class FlowField:
 			return warning("No point specified. Cannot get flow.")
 		if not self.__check_validity__(p):
 			return warning("Invalid point. Cannot get flow.")
-		if hash3d(p) not in field.keys():
+		if hash3d(p) not in self.field.keys():
 			return warning("Flow not set. Cannot get flow.")
 		return self.field[hash3d(p)]
 
@@ -120,6 +132,61 @@ class FlowField:
 			z = np.array([	np.array(self.coords.values())[idx_prev],
 							np.array(self.coords.values())[idx_next]])
 		return np.squeeze(z)
+
+class NOAAField:
+	def __init__(self, *args, **kwargs):
+		self.origin = parsekw(kwargs, 'origin', np.array([37.0, -121.0]))
+		self.lat_span_m = parsekw(kwargs, 'latspan', 120.0 * KM_2_M)
+		self.lon_span_m = parsekw(kwargs, 'lonspan', 120.0 * KM_2_M)
+		self.min_lat = self.origin[0] - self.lat_span_m * M_2_DEGLAT
+		self.max_lat = self.origin[0] + self.lat_span_m * M_2_DEGLAT
+		self.min_lon = self.origin[1] - self.lon_span_m * M_2_DEGLAT
+		self.max_lon = self.origin[1] + self.lon_span_m * M_2_DEGLAT
+		self.min_lon = self.min_lon if self.min_lon > 0 else self.min_lon + 180.0
+		self.max_lon = self.max_lon if self.max_lon > 0 else self.max_lon + 180.0
+		self.origin[1] = self.origin[1] if self.origin[1] > 0 else self.origin[1] + 180.0
+		self.data = fetch(self.min_lat, self.min_lon, self.max_lat, self.max_lon, 6)
+		self.field = dict()
+		self.coords = dict()
+		for d in self.data:
+			p = d[0:3]
+			magnitude = np.sqrt(d[3]**2 + d[4]**2)
+			direction = np.arctan2(d[4], d[3])
+			p[0] = (p[0] - self.origin[0]) * DEGLAT_2_M
+			p[1] = (p[1] - self.origin[1]) * DEGLAT_2_M
+			self.coords[hash3d(p)] = p
+			self.field[hash3d(p)] = [magnitude, direction]
+		n_neighbors = 4
+		self.knn_vlat = neighbors.KNeighborsRegressor(n_neighbors, weights='distance')
+		self.knn_vlon = neighbors.KNeighborsRegressor(n_neighbors, weights='distance')
+		X = self.data[:,0:3]
+		Ylat = self.data[:,3]
+		Ylon = self.data[:,4]
+		self.knn_vlat.fit(X, Ylat)
+		self.knn_vlon.fit(X, Ylon)
+		self.pmin = np.array([-self.lat_span_m, -self.lon_span_m, np.min(self.data[:,2])])
+		self.pmax = np.array([self.lat_span_m, self.lon_span_m, np.max(self.data[:,2])])
+
+	def get_flow(self, *args, **kwargs):
+		"""
+		Get flow at a given point.
+
+		kwarg 'p' 3D point at which to get flow.
+		return magnitude and direction of flow at p
+		"""
+
+		p = np.array(parsekw(kwargs, 'p', np.inf))
+		if any(compare(p, np.inf)):
+			return warning("No point specified. Cannot get flow.")
+		# p[0] = self.origin[0] + p[0] * M_2_KM * KM_2_NAUTMI * NAUTMI_2_DEGLAT
+		# p[0] = self.origin[0] + p[0] * M_2_KM * KM_2_NAUTMI * NAUTMI_2_DEGLAT
+		# p[1] = self.origin[1] + p[1] * M_2_KM * KM_2_NAUTMI * NAUTMI_2_DEGLAT
+		vlat = self.knn_vlat.predict(np.atleast_2d(p))
+		vlon = self.knn_vlon.predict(np.atleast_2d(p))
+		magnitude = np.sqrt(vlat**2 + vlon**2)
+		direction = np.arctan2(vlon, vlat)
+		return [magnitude, direction]
+
 
 class PlanarField(FlowField):
 	def __init__(self, *args, **kwargs):
@@ -240,3 +307,57 @@ class SineField(PlanarField):
 										z=altitude[i],
 										magnitude=magnitude,
 										direction=0.0)
+
+class BrownianSoundingField(SoundingField):
+	def __init__(self, *args, **kwargs):
+		SoundingField.__init__(self, file=kwargs.get('file'))
+		self.brown_mag = np.zeros(len(self.coords.values()))
+		self.brown_dir = np.zeros(len(self.coords.values()))
+
+	def get_flow(self, *args, **kwargs):
+		p = parsekw(kwargs, 'p', np.inf * np.ones(3))
+		for i, pos in enumerate(self.coords.values()):
+			curr_mag, curr_dir = FlowField.get_flow(self, p=pos)
+			magnitude = curr_mag + self.brown_mag[i]
+			direction = curr_dir + self.brown_dir[i]
+			PlanarField.set_planar_flow(self, z=pos[2], magnitude=magnitude, direction=direction)
+		self.brown_mag += norm.rvs(size=self.brown_mag.shape, scale=1e-3)
+		self.brown_dir += norm.rvs(size=self.brown_dir.shape, scale=1e-6)
+		return PlanarField.get_flow(self, p=p)
+
+class BrownianSineField(SineField):
+	def __init__(self, *args, **kwargs):
+		SineField.__init__(	self,
+							zmin=kwargs.get('zmin'),
+							zmax=kwargs.get('zmax'),
+							resolution=kwargs.get('resolution'),
+							frequency=kwargs.get('frequency'),
+							amplitude=kwargs.get('amplitude'),
+							phase=kwargs.get('phase'),
+							offset=kwargs.get('offset'))
+		self.brown_mag = np.zeros(len(self.coords.values()))
+		self.brown_dir = np.zeros(len(self.coords.values()))
+
+	def get_flow(self, *args, **kwargs):
+		p = parsekw(kwargs, 'p', np.inf * np.ones(3))
+		for i, pos in enumerate(self.coords.values()):
+			curr_mag, curr_dir = FlowField.get_flow(self, p=pos)
+			magnitude = curr_mag + self.brown_mag[i]
+			direction = curr_dir + self.brown_dir[i]
+			PlanarField.set_planar_flow(self, z=pos[2], magnitude=magnitude, direction=direction)
+		r_mag = norm.rvs(size=self.brown_mag.shape, scale=1e-3)
+		r_dir = norm.rvs(size=self.brown_dir.shape, scale=1e-8)
+		m = 20
+		n = len(self.brown_mag)
+		M = np.eye(n)
+		for i in range(1,m):
+			M += np.diag(np.ones(n-i),i)
+			M += np.diag(np.ones(n-i),-i)
+		M = np.matrix(M)
+		self.brown_mag = np.matrix(self.brown_mag)
+		self.brown_dir = np.matrix(self.brown_dir)
+		r_mag = np.matrix(r_mag) * M / (2 * m)
+		r_dir = np.matrix(r_dir) * M / (2 * m)
+		self.brown_mag = np.squeeze(np.array(self.brown_mag + r_mag))
+		self.brown_dir = np.squeeze(np.array(self.brown_dir + r_dir))
+		return PlanarField.get_flow(self, p=p)

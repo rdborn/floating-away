@@ -1,7 +1,11 @@
+# from pyflow.flowfields import BrownianSoundingField as SoundingField
 from pyflow.flowfields import SoundingField
+# from pyflow.flowfields import BrownianSineField as SineField
 from pyflow.flowfields import SineField
+from pyflow.flowfields import NOAAField
 from pyloon.pyloon import GeneralLoon as Loon
 from numpy import cos, sin
+from scipy.stats import norm
 
 import numpy as np
 import pandas as pd
@@ -41,6 +45,7 @@ class LoonSim:
 
 		self.tcurr = 0.0
 		i_should_plot = parsekw(kwargs, 'plot', True)
+		use_noaa = parsekw(kwargs, 'noaa', False)
 		self.loon_history = DataFrame(columns=['t','x','y','z'])
 		if i_should_plot:
 			self.history_plot = plt.figure().gca(projection='3d')
@@ -48,16 +53,21 @@ class LoonSim:
 			plt.ion()
 
 		file = parsekw(kwargs, 'file',"ERR_NO_FILE")
-		if file == "ERR_NO_FILE":
-			self.field = SineField( zmin=kwargs.get('zmin'),
-									zmax=kwargs.get('zmax'),
-									resolution=kwargs.get('resolution'),
-									frequency=kwargs.get('frequency'),
-									amplitude=kwargs.get('amplitude'),
-									phase=kwargs.get('phase'),
-									offset=kwargs.get('offset'))
+		if use_noaa:
+			self.field = NOAAField(	origin=kwargs.get('origin'),
+									latspan=kwargs.get('latspan'),
+									lonspan=kwargs.get('lonspan'))
 		else:
-			self.field = SoundingField(file=file)
+			if file == "ERR_NO_FILE":
+				self.field = SineField( zmin=kwargs.get('zmin'),
+										zmax=kwargs.get('zmax'),
+										resolution=kwargs.get('resolution'),
+										frequency=kwargs.get('frequency'),
+										amplitude=kwargs.get('amplitude'),
+										phase=kwargs.get('phase'),
+										offset=kwargs.get('offset'))
+			else:
+				self.field = SoundingField(file=file)
 
 		x = parsekw(kwargs, 'xi', 0.0)		# Initial x coordinate (m)  [default: (xdim/2) m]
 		y = parsekw(kwargs, 'yi', 0.0)		# Initial x coordinate (m)  [default: (ydim/2) m]
@@ -90,7 +100,8 @@ class LoonSim:
 		vx = magnitude * cos(direction)
 		vy = magnitude * sin(direction)
 		vz = u
-		self.loon.update(vx=vx+rng(0), vy=vy, vz=vz+rng(0))
+		w = 1.0
+		self.loon.update(vx=vx+rng(w), vy=vy+rng(w), vz=vz+rng(w))
 		self.tcurr += self.dt
 		loon_pos = DataFrame([[self.tcurr, self.loon.x, self.loon.y, self.loon.z]], columns=['t','x','y','z'])
 		self.loon_history = self.loon_history.append(loon_pos, ignore_index=True)

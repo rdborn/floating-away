@@ -10,8 +10,8 @@ class GeneralLoon:
     def __init__(self, *args, **kwargs):
         self.Cd = 0.5	# drag coefficient
         self.A = 10	# cross-sectional area
-        self.m = parsekw(kwargs, 'm', 1.0)	# balloon mass
-        self.Fs = parsekw(kwargs, 'Fs', 1.0)			# sampling frequency (Hz)   [default: Fs = 1 Hz]
+        self.m = parsekw(kwargs, 'm', 1.0)      # balloon mass
+        self.Fs = parsekw(kwargs, 'Fs', 1.0)    # sampling frequency (Hz)   [default: Fs = 1 Hz]
 
         self.x = parsekw(kwargs, 'xi', 0.0)    # Initial x coordinate (m)  [default: 0 m]
         self.y = parsekw(kwargs, 'yi', 0.0)    # Initial y coordinate (m)  [default: 0 m]
