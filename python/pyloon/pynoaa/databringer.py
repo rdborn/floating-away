@@ -22,15 +22,14 @@ def fetch(min_lat, min_lon, max_lat, max_lon, hrs_ahead):
     lat = min_latitude
     lon = min_longitude
     alts = hpa2alt(np.array(pres, dtype='float'))
-    print(pres)
-    print(alts)
     data_files = []
     data = np.array([np.zeros(5)])
     for alt in alts:
         data_files.append([get_file_name(lat, lon, alt, hrs_ahead)])
+    print("\tReading data...")
     for i, data_file in enumerate(data_files):
         __alt__ = alts[i]
-        print(data_file[0])
+        print("\t\t" + data_file[0])
         with open(data_file[0], 'rb') as f:
             raw_data = f.read(DATA_ENTRY_LENGTH)
             while not len(raw_data) < DATA_ENTRY_LENGTH:
@@ -40,7 +39,22 @@ def fetch(min_lat, min_lon, max_lat, max_lon, hrs_ahead):
                     entry = np.array([__lat__, __lon__, __alt__, vlat, vlon])
                     data = np.append(data, [entry], axis=0)
                 raw_data = f.read(DATA_ENTRY_LENGTH)
-    return data[1:]
+    data = data[1:]
+    # HACK OUT THE WEIRD ERRONEOUS ENTRIES
+    for d in data:
+        coord = d[0:3]
+        index = 1 * (data[:,0:3] == coord).all(axis=1)
+        if sum(index) > 1:
+            for i, idx in enumerate(index):
+                if idx == 1:
+                    index[i] = 0
+                    break
+            index = (index == 0)
+            data = data[index]
+        if abs(d[2] - 16975.9752451) < 1e-3:
+            index = (index == 0)
+            data = data[index]
+    return data
 
 def get_file_name(lat, lon, alt, hrs_ahead):
     latitude = get_lat(lat)

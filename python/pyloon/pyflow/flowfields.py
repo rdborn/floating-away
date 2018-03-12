@@ -145,7 +145,7 @@ class NOAAField:
 		self.min_lon = self.min_lon if self.min_lon > 0 else self.min_lon + 180.0
 		self.max_lon = self.max_lon if self.max_lon > 0 else self.max_lon + 180.0
 		self.origin[1] = self.origin[1] if self.origin[1] > 0 else self.origin[1] + 180.0
-		self.data = fetch(self.min_lat, self.min_lon, self.max_lat, self.max_lon, 6)
+		self.data = fetch(self.min_lat, self.min_lon, self.max_lat, self.max_lon, 15)
 		self.field = dict()
 		self.coords = dict()
 		for d in self.data:
@@ -176,7 +176,7 @@ class NOAAField:
 		"""
 
 		p = np.array(parsekw(kwargs, 'p', np.inf))
-		if any(compare(p, np.inf)):
+		if (compare(p, np.inf)).any():
 			return warning("No point specified. Cannot get flow.")
 		# p[0] = self.origin[0] + p[0] * M_2_KM * KM_2_NAUTMI * NAUTMI_2_DEGLAT
 		# p[0] = self.origin[0] + p[0] * M_2_KM * KM_2_NAUTMI * NAUTMI_2_DEGLAT
@@ -186,7 +186,6 @@ class NOAAField:
 		magnitude = np.sqrt(vlat**2 + vlon**2)
 		direction = np.arctan2(vlon, vlat)
 		return [magnitude, direction]
-
 
 class PlanarField(FlowField):
 	def __init__(self, *args, **kwargs):
@@ -235,7 +234,7 @@ class PlanarField(FlowField):
 		"""
 
 		p = parsekw(kwargs, 'p', np.inf)
-		if any(compare(p, np.inf)):
+		if (compare(p, np.inf)).any():
 			return warning("No point specified. Cannot get flow.")
 		return self.__interp__(z=p[2])
 
@@ -287,6 +286,29 @@ class SoundingField(PlanarField):
 										z=altitude[i],
 										magnitude=speed[i],
 										direction=direction[i])
+		X = np.zeros([len(self.field.keys()), 3])
+		y_x = np.zeros(len(self.field.keys()))
+		y_y = np.zeros(len(self.field.keys()))
+		for i, key in enumerate(self.field.keys()):
+			X[i] = self.coords[key]
+			magnitude, direction = self.field[key]
+			y_x[i] = magnitude * np.cos(direction)
+			y_y[i] = magnitude * np.sin(direction)
+		n_neighbors = 4
+		self.knn_vx = neighbors.KNeighborsRegressor(n_neighbors, weights='uniform')
+		self.knn_vy = neighbors.KNeighborsRegressor(n_neighbors, weights='uniform')
+		self.knn_vx.fit(X, y_x)
+		self.knn_vy.fit(X, y_y)
+
+	def get_flow(self, *args, **kwargs):
+		p = parsekw(kwargs, 'p', np.inf)
+		if (compare(p, np.inf)).any():
+			return warning("No point specified. Cannot get flow.")
+		vx = self.knn_vx.predict(np.atleast_2d(p))
+		vy = self.knn_vy.predict(np.atleast_2d(p))
+		magnitude = np.sqrt(vx**2 + vy**2)
+		direction = np.arctan2(vy, vx)
+		return [magnitude, direction]
 
 class SineField(PlanarField):
 	def __init__(self, *args, **kwargs):

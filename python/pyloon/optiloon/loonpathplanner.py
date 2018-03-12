@@ -1,10 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-from sklearn.gaussian_process import GaussianProcessRegressor as GPR
 from sklearn.gaussian_process.kernels import RBF, Matern, WhiteKernel, ConstantKernel as C
 import copy
-from copy import deepcopy
 
 import os, sys, inspect
 sys.path.insert(1, os.path.join(sys.path[0],'..'))
@@ -12,6 +10,7 @@ sys.path.insert(1, os.path.join(sys.path[0],'..'))
 from pyutils.pyutils import parsekw, hash3d, hash4d, rng, downsize
 from pyutils import pyutils
 from pyflow.pystreams import VarThresholdIdentifier as JSI
+from optiloon.fieldestimator import GPFE, KNN1DGP, Multi1DGP
 
 class LoonPathPlanner:
     def __init__(self, *args, **kwargs):
@@ -24,9 +23,10 @@ class LoonPathPlanner:
         """
 
         field = parsekw(kwargs, 'field', 0.0) # wind field object
+        fieldestimator = parsekw(kwargs, 'fieldestimator', 'gpfe')
         self.lower = parsekw(kwargs, 'lower', 0.0)
         self.upper = parsekw(kwargs, 'upper', 100)
-        self.retrain(field=field)
+        self.retrain(field=field, fieldestimator=fieldestimator)
 
     def retrain(self, *args, **kwargs):
         """
@@ -36,15 +36,16 @@ class LoonPathPlanner:
         """
 
         field = parsekw(kwargs, 'field', 0.0) # wind field object
+        fieldestimator = parsekw(kwargs, 'fieldestimator', 'gpfe') # wind field object
 
-        fx = np.zeros(len(field.field.keys()))
-        fy = np.zeros(len(field.field.keys()))
+        vx = np.zeros(len(field.field.keys()))
+        vy = np.zeros(len(field.field.keys()))
         coords = np.zeros([len(field.coords.keys()),len(field.coords.values()[0])])
         for i in range(len(field.field.keys())):
             this_key = field.field.keys()[i]
             magnitude, direction = field.field[this_key]
-            fx[i] = np.array([magnitude * np.cos(direction)])
-            fy[i] = np.array([magnitude * np.sin(direction)])
+            vx[i] = np.array([magnitude * np.cos(direction)])
+            vy[i] = np.array([magnitude * np.sin(direction)])
             coords[i] = np.array(field.coords[this_key])
             if np.int(coords[i][2]/1000) == -1:
                  print( "x: " + str(np.int(coords[i][0]/1000)) + \
@@ -54,21 +55,34 @@ class LoonPathPlanner:
                         "\tdir: " + str(np.int(direction*180.0/np.pi)))
         self.mask = downsize(coords)
         coords = coords[:,self.mask]
-        if len(coords[0]) == 1:
-            kernel = C(1.0, (1e-3, 1e3)) * RBF(0.5, (1e-3, 1e0)) \
-                        + C(1.0, (1e-3, 1e3)) * RBF(15, (1e1, 1e3)) \
-                        + WhiteKernel(1, (1,1))
-        else:
-            kernel = C(1.0, (1e-3, 1e3)) * RBF(0.5*np.ones(len(coords[0])), (1e-6, 1e0)) \
+        kernel = C(1.0, (1e-3, 1e3)) * RBF(0.5, (1e-3, 1e0)) \
+                + C(1.0, (1e-3, 1e3)) * RBF(15, (1e1, 1e3)) \
+                + WhiteKernel(1, (1,1))
+        n_restarts_optimizer = 12
+        if fieldestimator == 'gpfe':
+            if len(coords[0]) != 1:
+                kernel = C(1.0, (1e-3, 1e3)) * RBF(0.5*np.ones(len(coords[0])), (1e-6, 1e0)) \
                         + C(1.0, (1e-3, 1e3)) * RBF(15*np.ones(len(coords[0])), (1e1, 1e6)) \
                         + WhiteKernel(1, (1,1))
-        self.GPx = GPR(kernel=kernel, n_restarts_optimizer=9)
-        self.GPy = GPR(kernel=kernel, n_restarts_optimizer=9)
+            self.vx_estimator = GPFE(kernel=kernel, n_restarts_optimizer=n_restarts_optimizer)
+            self.vy_estimator = GPFE(kernel=kernel, n_restarts_optimizer=n_restarts_optimizer)
+        elif fieldestimator == 'knn1dgp':
+            self.vx_estimator = KNN1DGP()
+            self.vy_estimator = KNN1DGP()
+        elif fieldestimator == 'multi1dgp':
+            self.vx_estimator = Multi1DGP()
+            self.vy_estimator = Multi1DGP()
         print(coords.shape)
-        print("Training GPx")
-        self.GPx.fit(np.atleast_2d(coords), np.atleast_2d(fx).T)
-        print("Training GPy")
-        self.GPy.fit(np.atleast_2d(coords), np.atleast_2d(fy).T)
+        print("\tTraining GPx")
+        self.vx_estimator.fit(X=coords,
+                            y=vx,
+                            kernel=kernel,
+                            n_restarts_optimizer=n_restarts_optimizer)
+        print("\tTraining GPy")
+        self.vy_estimator.fit(X=coords,
+                            y=vy,
+                            kernel=kernel,
+                            n_restarts_optimizer=n_restarts_optimizer)
 
         return True
 
@@ -83,8 +97,8 @@ class LoonPathPlanner:
         return standard deviation of flow in y direction
         """
 
-        mean_fx, std_fx = self.GPx.predict(np.atleast_2d(np.array(p)[self.mask]), return_std=True)
-        mean_fy, std_fy = self.GPy.predict(np.atleast_2d(np.array(p)[self.mask]), return_std=True)
+        mean_fx, std_fx = self.vx_estimator.predict(p=np.array(p)[self.mask], return_std=True)
+        mean_fy, std_fy = self.vy_estimator.predict(p=np.array(p)[self.mask], return_std=True)
         return mean_fx, mean_fy, std_fx, std_fy
 
     def ev(self, p):
@@ -97,8 +111,8 @@ class LoonPathPlanner:
         """
         p_pred = np.atleast_2d(np.array(p)[self.mask])
         p_pred = p_pred.T if (np.shape(p_pred)[0] != 1 or np.shape(p_pred)[1] > 3) else p_pred
-        mean_fx = self.GPx.predict(p_pred, return_std=False)
-        mean_fy = self.GPy.predict(p_pred, return_std=False)
+        mean_fx = self.vx_estimator.predict(p=p_pred, return_std=False)
+        mean_fy = self.vy_estimator.predict(p=p_pred, return_std=False)
         return mean_fx, mean_fy
 
     def __cost__(self, p, pstar):
@@ -159,7 +173,7 @@ class MonteCarloPlanner(LoonPathPlanner):
                                     lower=kwargs.get('lower'),
                                     upper=kwargs.get('upper'))
 
-    def plan(self, loon, pstar, depth):
+    def plan(self, *args, **kwargs):
         """
         Plan the path for the balloon.
 
@@ -168,6 +182,9 @@ class MonteCarloPlanner(LoonPathPlanner):
         parameter depth recursion depth for Monte Carlo tree search
         return optimal policy (discrete time control effort in reverse order)
         """
+        loon = parsekw(kwargs, 'loon', None)
+        pstar = parsekw(kwargs, 'pstar', np.zeros(3))
+        depth = parsekw(kwargs, 'depth', 0)
 
         self.__reset__()
         self.__montecarlo__(loon, pstar, depth)
@@ -310,8 +327,8 @@ class PlantInvertingController(LoonPathPlanner):
         p = np.array(loon.get_pos())
         if loon == None:
             warning("Must specify loon.")
-        J_x = self.__differentiate_gp__(self.GPx, p[2])
-        J_y = self.__differentiate_gp__(self.GPy, p[2])
+        J_x = self.__differentiate_gp__(self.vx_estimator.estimators[0], p[2])
+        J_y = self.__differentiate_gp__(self.vy_estimator.estimators[0], p[2])
         J = np.array([J_x, J_y])
         x = p[0:2]
         num = np.inner(J, -x / np.inner(x, x))
@@ -413,10 +430,11 @@ class WindAwarePlanner(LoonPathPlanner):
         LoonPathPlanner.__init__(   self,
                                     field=kwargs.get('field'),
                                     lower=kwargs.get('lower'),
-                                    upper=kwargs.get('upper'))
+                                    upper=kwargs.get('upper'),
+                                    fieldestimator=kwargs.get('fieldestimator'))
         self.streamres = parsekw(kwargs, 'streamres', 500)
-        self.streammax = parsekw(kwargs, 'streammax', 0)
-        self.streammin = parsekw(kwargs, 'streammin', 30000)
+        self.streammax = parsekw(kwargs, 'streammax', 30000)
+        self.streammin = parsekw(kwargs, 'streammin', 0)
         self.threshold = parsekw(kwargs, 'threshold', 0.01)
         self.streamsize = parsekw(kwargs, 'streamsize', 20)
         self.__redo_jetstreams__(np.zeros(3))
@@ -430,11 +448,11 @@ class WindAwarePlanner(LoonPathPlanner):
             magnitude = np.sqrt(vx**2 + vy**2)
             direction = np.arctan2(vy, vx)
             streammag[i] = magnitude
-            streamdir[i] = np.cos(direction)
+            streamdir[i] = direction
         data = np.array([streammag, streamdir, alt]).T
         self.jets = JSI(data=data, threshold=self.threshold, streamsize=self.streamsize)
 
-    def plan(self, loon, pstar):
+    def plan(self, *args, **kwargs):
         """
         Calculate and return which jetstream for a balloon to travel to.
 
@@ -442,6 +460,8 @@ class WindAwarePlanner(LoonPathPlanner):
         parameter pstar 3D point, goal location.
         return altitude of center of most desirable jetstream.
         """
+        loon = parsekw(kwargs, 'loon', None)
+        pstar = parsekw(kwargs, 'pstar', np.zeros(3))
 
         self.__redo_jetstreams__(loon.get_pos())
         print(self.jets.jetstreams.values())
@@ -525,8 +545,8 @@ class WindAwarePlanner(LoonPathPlanner):
         return estimated wind directions at altitudes in z_test
         """
 
-        vx_test = self.GPx.predict(np.atleast_2d(np.array(z_test)).T, return_std=False)
-        vy_test = self.GPy.predict(np.atleast_2d(np.array(z_test)).T, return_std=False)
+        vx_test = self.vx_estimator.predict(p=np.array(z_test), return_std=False)
+        vy_test = self.vy_estimator.predict(p=np.array(z_test), return_std=False)
         theta = np.arctan2(vy_test, vx_test)
         return theta
 
@@ -606,7 +626,9 @@ class WindAwarePlanner(LoonPathPlanner):
         # Find velocity towards origin
         phidot = np.dot(phat, pdot) * phat
         # Find acceleration towards origin
-        phiddot = (((np.linalg.norm(pdot)**2 - 2 * np.linalg.norm(phidot)**2)) * phat + np.linalg.norm(phidot) * pdot) / np.linalg.norm(p)
+        norm_p = np.linalg.norm(p)
+        phiddot = (((np.linalg.norm(pdot)**2 - 2 * np.linalg.norm(phidot)**2)) * phat + np.linalg.norm(phidot) * pdot)
+        phiddot = phiddot / norm_p if norm_p > 0 else phiddot
         # Return acceleration towards origin
         return phiddot
 
@@ -638,12 +660,14 @@ class WindAwarePlanner(LoonPathPlanner):
         pdot = np.squeeze(np.array([vx, vy]).T)
         pdothat = pdot / np.linalg.norm(pdot)
         # Calculate the unit vector along the balloon's lateral position vector
-        phat = p / np.linalg.norm(p)
+        norm_p = np.linalg.norm(p)
+        phat = p / norm_p if norm_p > 0 else p
         # Get the lateral position of the goal point
         pstar = pstar[0:2]
         # Translate the coordinate system such that pstar is at the origin
         phi = p - pstar
-        phihat = phi / np.linalg.norm(phi)
+        norm_phi = np.linalg.norm(phi)
+        phihat = phi / norm_phi if norm_phi > 0 else phi
         # Calculate the acceleration of the balloon towards the origin
         phiddot = self.__phiddot__(p, phat, pdot)
 
@@ -703,7 +727,7 @@ class WindAwarePlanner(LoonPathPlanner):
         return dp, dz
 
 class MPCWAP(WindAwarePlanner):
-    def plan(self, loon, u, T, pstar, depth):
+    def plan(self, *args, **kwargs):
         """
         Find the best sequence of jetstreams to which to travel. Balloon can
         only move to adjacent jetstreams.
@@ -715,6 +739,12 @@ class MPCWAP(WindAwarePlanner):
         parameter depth length of jetstream sequences for consideration
         return sequence of jetstreams that has the smallest total cost
         """
+        loon = parsekw(kwargs, 'loon', None)
+        u = parsekw(kwargs, 'u', 0.0)
+        T = parsekw(kwargs, 'T', 180.0)
+        pstar = parsekw(kwargs, 'pstar', np.zeros(3))
+        depth = parsekw(kwargs, 'depth', 0)
+
         # Initialize a dictionary to store the potential sequences of jetstreams,
         # indexed by their cost
         self.sequences = dict()
@@ -849,27 +879,29 @@ class MPCWAP(WindAwarePlanner):
         J = (J_pos + J_vel)
         return J, test_loon
 
-    def __delta_p_between_jetstreams__(self, u):
-        jets = self.jets.jetstreams.values()
-        for jet1 in jets:
-            for jet2 in jets:
-                if jet1.avg_alt != jet2.avg_alt:
-                    pass
-
 class MPCWAPFast(WindAwarePlanner):
-    def plan(self, loon, u, T, pstar, depth):
-        WindAwarePlanner.__redo_jetstreams__(self, loon.get_pos())
+    def plan(self, *args, **kwargs):
+        loon = parsekw(kwargs, 'loon', None)
+        u = parsekw(kwargs, 'u', 0.0)
+        T = parsekw(kwargs, 'T', 180.0)
+        pstar = parsekw(kwargs, 'pstar', np.zeros(3))
+        depth = parsekw(kwargs, 'depth', 0)
+
+        radius = 40000
+        if self.vx_estimator.changing_estimators(p=loon.get_pos(), radius=radius):
+            WindAwarePlanner.__redo_jetstreams__(self, loon.get_pos())
+        print("\tJetstreams (min, avg, max alts, mag, dir):")
         for jet in self.jets.jetstreams.values():
-            print(str(jet.min_alt) + " - " + str(jet.max_alt))
+            print("\t\t" + str(np.int(jet.min_alt)) + \
+                "\t" + str(np.int(jet.avg_alt)) + \
+                "\t" + str(np.int(jet.max_alt)) + \
+                "\t" + str(np.int(jet.magnitude)) + \
+                "\t" + str(np.int(jet.direction * 180.0 / np.pi)))
         self.__delta_p_between_jetstreams__(u)
         self.sequences = dict()
         self.__tree_search__(loon.get_pos(), u, T, pstar, depth, 0.0, np.array([]))
         min_J = np.min(self.sequences.keys())
-        # print(self.sequences.keys())
-        # print(np.array(self.sequences.values()))
         best_pol = self.sequences[min_J]
-        # print(self.sequences.keys())
-        # print(np.array(self.sequences.values()))
         return best_pol
 
     def __tree_search__(self, pos, u, T, pstar, depth, J, policy):
@@ -897,12 +929,12 @@ class MPCWAPFast(WindAwarePlanner):
                 J_vel = WindAwarePlanner.__cost_of_jetstream__(self, new_pos, pstar, jet)*1e1
                 J_i = J_pos + J_vel + J_fuel + J
                 policy_i = np.append(np.array(policy), np.array(target_alt))
-                # print(str(np.floor(target_alt)) + "\t\tJpos: " + str(np.floor(J_pos)) + "\t\tJvel: " + str(np.floor(J_vel)) + "\t\tJfuel: " + str(np.floor(J_fuel)) + "\t\tJ: " + str(np.floor(J_i)))
                 self.__tree_search__(new_pos, u, T, pstar, depth-1, J_i, policy_i)
 
     def __delta_p_between_jetstreams__(self, u):
         jets = self.jets.jetstreams.values()
         self.delta_p = np.zeros([len(jets),len(jets),2])
+        self.delta_std = np.zeros([len(jets),len(jets),2])
         N = 500
         x_test = np.zeros(N)
         y_test = np.zeros(N)
@@ -914,16 +946,22 @@ class MPCWAPFast(WindAwarePlanner):
                     z2 = jet2.avg_alt
                     z_test = np.linspace(z1, z2, N)
                     p_test = np.array([x_test, y_test, z_test])
-                    vx, vy = self.ev(p_test)
+                    # vx, vy = self.ev(p_test)
+                    vx, vy, std_x, std_y = self.predict(p_test)
                     mean_vx = np.mean(vx)
                     mean_vy = np.mean(vy)
                     dz = abs(z2 - z1)
-                    t = dz / u
+                    t = abs(dz / u)
+                    total_std_x = np.sqrt(np.sum(std_x**2) * dt)
+                    total_std_y = np.sqrt(np.sum(std_y**2) * dt)
+                    d_std = np.array([total_std_x, total_std_y])
                     dx = mean_vx * t
                     dy = mean_vy * t
                     dp = np.array([dx, dy])
                     self.delta_p[i,j] = dp
                     self.delta_p[j,i] = dp
+                    self.delta_std[i,j] = d_std
+                    self.delta_std[j,i] = d_std
 
 class LocalDynamicProgrammingPlanner(WindAwarePlanner):
     def __init__(self, *args, **kwargs):

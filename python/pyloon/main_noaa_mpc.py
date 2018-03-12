@@ -14,8 +14,8 @@ duration = 6
 
 # Set up flow field
 LS = LoonSim(	origin=np.array([37.5, -120.5]),
-				latspan=600.0,
-				lonspan=600.0,
+				latspan=60000.0,
+				lonspan=60000.0,
 				Fs=hz,
 				xi=0.0,
 				yi=0.0,
@@ -29,17 +29,16 @@ pstar = np.array([0.0, 0.0, 17500.0])
 last_pos = LS.loon.get_pos()
 pos = last_pos
 LPP = WAP(	field=LS.field,
-			lower=12000,
-			upper=20000,
+			lower=2000,
+			upper=30000,
 			streamsize=10,
-			threshold=0.001)
+			threshold=0.00001)
 LPP.__delta_p_between_jetstreams__(5.0)
 
 # altitude = 2000.0
 # while True:
 # 	N = 100
 # 	M = 1500000.0
-# 	     550000
 # 	p = np.linspace(-M, M, N)
 # 	_x = np.zeros(N**2)
 # 	# _x = np.zeros(N)

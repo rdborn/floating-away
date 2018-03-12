@@ -171,11 +171,12 @@ class VarThresholdIdentifier(JetStreamIdentifier):
             val = self.data[key]
             mag_val = val[0]
             dir_val = val[1]
+            cos_dir_val = np.cos(dir_val)
             # If adding the value of the wind's direction at this altitude
             # to the set of directions at each altitude sampled so far in this
             # cluster will put the variance of the sample over the threshold,
             # OR if we are at the end of our data...
-            if np.var(np.append(cluster_vals,dir_val)) > threshold or i == len(self.data.keys())-1:
+            if np.var(np.append(cluster_vals,cos_dir_val)) > threshold or i == len(self.data.keys())-1:
                 # Store the altitudes sampled in this cluster into the clusters
                 # dictionary, indexed by the order in which we added the clusters
                 self.clusters[self.n_clusters] = np.array(cluster)
@@ -186,12 +187,12 @@ class VarThresholdIdentifier(JetStreamIdentifier):
                 cluster = [key]
                 # Reset the local variable cluster_values to hold only the most
                 # recent direction sampled
-                cluster_vals = [dir_val]
+                cluster_vals = [cos_dir_val]
             else:
                 # Add the most recently sampled altitude to the local variable cluster
                 cluster = np.append(cluster, key)
                 # Add the most recently sampled direction to the local variable cluster_values
-                cluster_vals = np.append(cluster_vals, dir_val)
+                cluster_vals = np.append(cluster_vals, cos_dir_val)
             # Label this data point as belonging to this cluster.
             # cluster_labels holds the altitude, magnitude, direction, and
             # cluster ID of each data point in no particular order
@@ -229,7 +230,7 @@ class VarThresholdIdentifier(JetStreamIdentifier):
             # Add the data point's values to the appropriate averages
             alt_sum[idx] += x[0]
             mag_sum[idx] += x[1]
-            dir_sum[idx] += x[2]
+            dir_sum[idx] += np.cos(x[2])
             # Increment the appropriate number of samples
             n[idx] += 1
             # If necessary, update the appropriate maximums and minimums
@@ -241,6 +242,19 @@ class VarThresholdIdentifier(JetStreamIdentifier):
         alt_avg = alt_sum / n
         mag_avg = mag_sum / n
         dir_avg = dir_sum / n
+        theta = np.zeros(len(self.stream_ids))
+        for i, cos_theta in enumerate(dir_avg):
+            theta_a = np.arccos(cos_theta)
+            theta_b = 2*np.pi - theta_a
+            for x in self.cluster_labels:
+                if x[3] == self.stream_ids[i]:
+                    if np.cos(theta_a - x[2]) > np.cos(theta_b - x[2]):
+                        theta[i] = theta_a
+                        break
+                    else:
+                        theta[i] = theta_b
+                        break
+
         # Initialize the jetstreams data structure as an empty dicitonary
         self.jetstreams = dict()
         # For each jetstream...
@@ -250,7 +264,7 @@ class VarThresholdIdentifier(JetStreamIdentifier):
                                                 min_alt=alt_min[i],
                                                 max_alt=alt_max[i],
                                                 magnitude=mag_avg[i],
-                                                direction=np.arccos(dir_avg[i]))
+                                                direction=theta[i])
 
     def find(self, z):
         # Get all the jetstreams
