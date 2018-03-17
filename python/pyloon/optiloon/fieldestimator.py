@@ -22,7 +22,7 @@ class FieldEstimator:
         key = parsekw(kwargs, 'key', None)
         X = self.X[key]
         y = self.y[key]
-        X = X.reshape(-1,1)
+        X = X.reshape(-1,1) if len(X.shape) == 1 else X
         y = y.reshape(-1,1)
         self.estimators[key].fit(X, y)
 
@@ -30,7 +30,8 @@ class FieldEstimator:
         key = parsekw(kwargs, 'key', None)
         p = parsekw(kwargs, 'p', None)
         return_std = parsekw(kwargs, 'return_std', False)
-        p = np.array(p).reshape(-1,1)
+        p = np.array(p)
+        p = p.reshape(-1,1) if len(p.shape) == 1 else p
         if return_std:
             prediction, std = self.estimators[key].predict(p, return_std=return_std)
             return prediction, std
@@ -54,6 +55,8 @@ class GPFE(FieldEstimator):
         self.X[key] = parsekw(kwargs, 'X', None)
         self.y[key] = parsekw(kwargs, 'y', None)
         FieldEstimator.fit(self, key=key)
+        if len(self.X[key][0]) > 1:
+            self.__partition__(self.X[key], self.y[key])
 
     def predict(self, *args, **kwargs):
         key = 0
@@ -61,6 +64,46 @@ class GPFE(FieldEstimator):
                                         key=key,
                                         p=kwargs.get('p'),
                                         return_std=kwargs.get('return_std'))
+
+    def __partition__(self, X, y):
+        self.estimator_locations = dict()
+        idx = 0
+        for i in range(len(X)):
+            xcoord = np.int(X[i][0])
+            ycoord = np.int(X[i][1])
+            zcoord = 0
+            p = np.array([xcoord, ycoord, zcoord])
+            key = hash3d(p)
+            if key in self.X.keys():
+                self.X[key] = np.append(self.X[key], X[i][2])
+                self.y[key] = np.append(self.y[key], y[i])
+            else:
+                self.X[key] = X[i][2]
+                self.y[key] = y[i]
+                self.estimator_locations[key] = p
+                for key in self.X.keys():
+                    self.X[key] = np.atleast_2d(self.X[key]).T
+            self.prediction_key = key
+
+    def changing_estimators(self, *args, **kwargs):
+        if len(self.X[0][0]) == 1:
+            return False
+        pos = np.atleast_2d(parsekw(kwargs, 'p', None))
+        radius = parsekw(kwargs, 'radius', 40000)
+        keys = self.estimator_locations.keys()
+        old_loc = self.estimator_locations[self.prediction_key]
+        oldx = old_loc[0]
+        oldy = old_loc[1]
+        d_old = (oldx - pos[0,0])**2 + (oldy - pos[0,1])**2
+        for i, key in enumerate(keys):
+            dx = self.estimator_locations[key][0] - pos[0,0]
+            dy = self.estimator_locations[key][1] - pos[0,1]
+            d = dx**2 + dy**2
+            if d < radius**2 and d < d_old:
+                if key != self.prediction_key:
+                    self.prediction_key = key
+                    return True
+        return False
 
 class Multi1DGP(FieldEstimator):
     def __init__(self, *args, **kwargs):
@@ -77,6 +120,7 @@ class Multi1DGP(FieldEstimator):
         self.__partition__(X, y)
         i = 0
         for key in self.estimator_locations.keys():
+            self.prediction_key = key
             i += 1
             print("\t\t" + str(i) + "/" + str(len(self.estimator_locations.keys())) + \
             "\t(" + str(self.estimator_locations[key][0]) + ", " + \
@@ -89,9 +133,9 @@ class Multi1DGP(FieldEstimator):
         p = np.atleast_2d(parsekw(kwargs, 'p', None))
         self.changing_estimators(p=p, radius=radius)
         return FieldEstimator.predict(self,
-                                            key=self.prediction_key,
-                                            p=p[:,2],
-                                            return_std=kwargs.get('return_std'))
+                                    key=self.prediction_key,
+                                    p=p[:,2],
+                                    return_std=kwargs.get('return_std'))
 
     def __partition__(self, X, y):
         self.estimator_locations = dict()
@@ -116,8 +160,9 @@ class Multi1DGP(FieldEstimator):
         pos = np.atleast_2d(parsekw(kwargs, 'p', None))
         radius = parsekw(kwargs, 'radius', 40000)
         keys = self.estimator_locations.keys()
-        oldx = self.estimator_locations[self.prediction_key][0]
-        oldy = self.estimator_locations[self.prediction_key][1]
+        old_loc = self.estimator_locations[self.prediction_key]
+        oldx = old_loc[0]
+        oldy = old_loc[1]
         d_old = (oldx - pos[0,0])**2 + (oldy - pos[0,1])**2
         for i, key in enumerate(keys):
             dx = self.estimator_locations[key][0] - pos[0,0]

@@ -10,6 +10,7 @@ import os, sys, inspect
 sys.path.insert(1, os.path.join(sys.path[0],'..'))
 
 from pyutils.pyutils import parsekw, hash3d, hash4d, rng
+import pyutils.pyutils as pyutils
 
 class JetStream:
     def __init__(self, *args, **kwargs):
@@ -166,17 +167,22 @@ class VarThresholdIdentifier(JetStreamIdentifier):
         # Initialize the cluster_values data structure to an empty list
         cluster_vals = []
         # For each altitude value (in ascending order)...
-        for i, key in enumerate(np.sort(self.data.keys())):
-            # Retrieve the wind magnitude and direction at this altitude
+        keys = np.sort(self.data.keys())
+        mag_vals = np.zeros(len(keys))
+        dir_vals = np.zeros(len(keys))
+        alt_vals = np.zeros(len(keys))
+        for i, key in enumerate(keys):
             val = self.data[key]
-            mag_val = val[0]
-            dir_val = val[1]
-            cos_dir_val = np.cos(dir_val)
+            mag_vals[i] = val[0]
+            dir_vals[i] = val[1] * np.pi / 180.0
+            alt_vals[i] = key
+        dir_vals = pyutils.continuify_angles(dir_vals) * 180.0 / np.pi
+        for i in range(len(dir_vals)):
             # If adding the value of the wind's direction at this altitude
             # to the set of directions at each altitude sampled so far in this
             # cluster will put the variance of the sample over the threshold,
             # OR if we are at the end of our data...
-            if np.var(np.append(cluster_vals,cos_dir_val)) > threshold or i == len(self.data.keys())-1:
+            if np.var(np.append(cluster_vals,dir_vals[i])) > threshold or i == len(dir_vals)-1:
                 # Store the altitudes sampled in this cluster into the clusters
                 # dictionary, indexed by the order in which we added the clusters
                 self.clusters[self.n_clusters] = np.array(cluster)
@@ -184,19 +190,51 @@ class VarThresholdIdentifier(JetStreamIdentifier):
                 self.n_clusters += 1
                 # Reset the local variable cluster to hold only the most recent
                 # altitude sampled
-                cluster = [key]
+                cluster = [alt_vals[i]]
                 # Reset the local variable cluster_values to hold only the most
                 # recent direction sampled
-                cluster_vals = [cos_dir_val]
+                cluster_vals = [dir_vals[i]]
             else:
                 # Add the most recently sampled altitude to the local variable cluster
-                cluster = np.append(cluster, key)
+                cluster = np.append(cluster, alt_vals[i])
                 # Add the most recently sampled direction to the local variable cluster_values
-                cluster_vals = np.append(cluster_vals, cos_dir_val)
+                cluster_vals = np.append(cluster_vals, dir_vals[i])
             # Label this data point as belonging to this cluster.
             # cluster_labels holds the altitude, magnitude, direction, and
             # cluster ID of each data point in no particular order
-            self.cluster_labels[i] = np.array([key, mag_val, dir_val, self.n_clusters])
+            self.cluster_labels[i] = np.array([alt_vals[i], mag_vals[i], dir_vals[i], self.n_clusters])
+
+        # for i, in enumerate(np.sort(self.data.keys())):
+        #     # Retrieve the wind magnitude and direction at this altitude
+        #     val = self.data[key]
+        #     mag_val = val[0]
+        #     dir_val = val[1]
+        #     cos_dir_val = np.cos(dir_val)
+        #     # If adding the value of the wind's direction at this altitude
+        #     # to the set of directions at each altitude sampled so far in this
+        #     # cluster will put the variance of the sample over the threshold,
+        #     # OR if we are at the end of our data...
+        #     if np.var(np.append(cluster_vals,cos_dir_val)) > threshold or i == len(self.data.keys())-1:
+        #         # Store the altitudes sampled in this cluster into the clusters
+        #         # dictionary, indexed by the order in which we added the clusters
+        #         self.clusters[self.n_clusters] = np.array(cluster)
+        #         # Increment the number of clusters we have identified
+        #         self.n_clusters += 1
+        #         # Reset the local variable cluster to hold only the most recent
+        #         # altitude sampled
+        #         cluster = [key]
+        #         # Reset the local variable cluster_values to hold only the most
+        #         # recent direction sampled
+        #         cluster_vals = [cos_dir_val]
+        #     else:
+        #         # Add the most recently sampled altitude to the local variable cluster
+        #         cluster = np.append(cluster, key)
+        #         # Add the most recently sampled direction to the local variable cluster_values
+        #         cluster_vals = np.append(cluster_vals, cos_dir_val)
+        #     # Label this data point as belonging to this cluster.
+        #     # cluster_labels holds the altitude, magnitude, direction, and
+        #     # cluster ID of each data point in no particular order
+        #     self.cluster_labels[i] = np.array([key, mag_val, dir_val, self.n_clusters])
 
     def __identify_streams__(self, streamsize):
         # Initialize jetstreams to an empty list

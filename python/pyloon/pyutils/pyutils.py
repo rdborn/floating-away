@@ -1,6 +1,43 @@
 import numpy as np
 from scipy.stats import norm
 
+def get_angle_range(x, y, stdx, stdy):
+    theta_nom = rad2deg(np.arctan2(y, x))
+    if stdx < abs(x):
+        if stdy < abs(y):
+            theta_upper = rad2deg(np.arctan2(y + np.sign(x) * stdy, x - np.sign(y) * stdx))
+            theta_lower = rad2deg(np.arctan2(y - np.sign(x) * stdy, x + np.sign(y) * stdx))
+        else:
+            theta_upper = rad2deg(np.arctan2(y + np.sign(x) * stdy, x - np.sign(x) * stdx))
+            theta_lower = rad2deg(np.arctan2(y - np.sign(x) * stdy, x - np.sign(x) * stdx))
+    else:
+        if stdy < abs(y):
+            theta_upper = rad2deg(np.arctan2(y - np.sign(y) * stdy, x - np.sign(y) * stdx))
+            theta_lower = rad2deg(np.arctan2(y - np.sign(y) * stdy, x + np.sign(y) * stdx))
+        else:
+            theta_upper = theta_nom + 180.0
+            theta_lower = theta_nom - 180.0
+    theta_lower = theta_lower if theta_lower < theta_nom else theta_lower - 360.0
+    theta_upper = theta_upper if theta_upper > theta_nom else theta_upper + 360.0
+    return theta_lower, theta_nom, theta_upper
+
+
+
+def rad2deg(theta):
+    return (theta * 180.0 / np.pi) % 360.0
+
+def continuify_angles(theta):
+    # return theta
+    buf = 190
+    for i in range(len(theta)):
+        if i > 0:
+            if abs(theta[i] - theta[i-1]) > buf:
+                if theta[i] > theta[i-1]:
+                    theta[i] = theta[i] - 360
+                else:
+                    theta[i] = theta[i] + 360
+    return theta
+
 def compare(x1, x2):
     compare_1 = np.array(x1)
     compare_2 = np.array(x2)

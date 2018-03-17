@@ -150,20 +150,22 @@ class NOAAField:
 		self.coords = dict()
 		for d in self.data:
 			p = d[0:3]
-			magnitude = np.sqrt(d[3]**2 + d[4]**2)
-			direction = np.arctan2(d[4], d[3])
+			vnorth = d[3]
+			veast = d[4]
+			magnitude = np.sqrt(vnorth**2 + veast**2)
+			direction = np.arctan2(veast, vnorth)
 			p[0] = (p[0] - self.origin[0]) * DEGLAT_2_M
 			p[1] = (p[1] - self.origin[1]) * DEGLAT_2_M
 			self.coords[hash3d(p)] = p
 			self.field[hash3d(p)] = [magnitude, direction]
 		n_neighbors = 4
-		self.knn_vlat = neighbors.KNeighborsRegressor(n_neighbors, weights='distance')
-		self.knn_vlon = neighbors.KNeighborsRegressor(n_neighbors, weights='distance')
+		self.knn_vnorth = neighbors.KNeighborsRegressor(n_neighbors, weights='distance')
+		self.knn_veast = neighbors.KNeighborsRegressor(n_neighbors, weights='distance')
 		X = self.data[:,0:3]
-		Ylat = self.data[:,3]
-		Ylon = self.data[:,4]
-		self.knn_vlat.fit(X, Ylat)
-		self.knn_vlon.fit(X, Ylon)
+		Ynorth = self.data[:,3]
+		Yeast = self.data[:,4]
+		self.knn_vnorth.fit(X, Ynorth)
+		self.knn_veast.fit(X, Yeast)
 		self.pmin = np.array([-self.lat_span_m, -self.lon_span_m, np.min(self.data[:,2])])
 		self.pmax = np.array([self.lat_span_m, self.lon_span_m, np.max(self.data[:,2])])
 
@@ -181,10 +183,10 @@ class NOAAField:
 		# p[0] = self.origin[0] + p[0] * M_2_KM * KM_2_NAUTMI * NAUTMI_2_DEGLAT
 		# p[0] = self.origin[0] + p[0] * M_2_KM * KM_2_NAUTMI * NAUTMI_2_DEGLAT
 		# p[1] = self.origin[1] + p[1] * M_2_KM * KM_2_NAUTMI * NAUTMI_2_DEGLAT
-		vlat = self.knn_vlat.predict(np.atleast_2d(p))
-		vlon = self.knn_vlon.predict(np.atleast_2d(p))
-		magnitude = np.sqrt(vlat**2 + vlon**2)
-		direction = np.arctan2(vlon, vlat)
+		vnorth = self.knn_vnorth.predict(np.atleast_2d(p))
+		veast = self.knn_veast.predict(np.atleast_2d(p))
+		magnitude = np.sqrt(vnorth**2 + veast**2)
+		direction = np.arctan2(veast, vnorth)
 		return [magnitude, direction]
 
 class PlanarField(FlowField):

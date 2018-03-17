@@ -34,9 +34,11 @@ def fetch(min_lat, min_lon, max_lat, max_lon, hrs_ahead):
             raw_data = f.read(DATA_ENTRY_LENGTH)
             while not len(raw_data) < DATA_ENTRY_LENGTH:
                 (__lat__, __lon__, vlat, vlon, t) = struct.unpack(DATA_ENTRY_FORMAT, raw_data)
+                vnorth = -vlon
+                veast = vlat
                 in_range = (__lat__ >= min_lat) and (__lat__ <= max_lat) and (__lon__ >= min_lon) and (__lon__ <= max_lon)
                 if in_range:
-                    entry = np.array([__lat__, __lon__, __alt__, vlat, vlon])
+                    entry = np.array([__lat__, __lon__, __alt__, vnorth, veast])
                     data = np.append(data, [entry], axis=0)
                 raw_data = f.read(DATA_ENTRY_LENGTH)
     data = data[1:]
