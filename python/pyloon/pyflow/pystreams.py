@@ -159,7 +159,7 @@ class VarThresholdIdentifier(JetStreamIdentifier):
         # Initialize the cluster_labels data structure as an array of zeros
         # with the same number of rows as data points and the same number
         # of columns as each data point
-        self.cluster_labels = np.zeros([len(self.data.keys()),len(self.X[0])+1])
+        self.cluster_labels = np.zeros([len(self.data.keys()),len(self.X[0])+1-1])
         # Initialize the total number of clusters we have created to zero
         self.n_clusters = 0
         # Initialize the cluster data structure to an empty list
@@ -171,18 +171,22 @@ class VarThresholdIdentifier(JetStreamIdentifier):
         mag_vals = np.zeros(len(keys))
         dir_vals = np.zeros(len(keys))
         alt_vals = np.zeros(len(keys))
+        unbounded = np.zeros(len(keys))
         for i, key in enumerate(keys):
             val = self.data[key]
             mag_vals[i] = val[0]
-            dir_vals[i] = val[1] * np.pi / 180.0
+            dir_vals[i] = val[1]
             alt_vals[i] = key
-        dir_vals = pyutils.continuify_angles(dir_vals) * 180.0 / np.pi
+            unbounded[i] = val[2]
+        dir_vals = pyutils.continuify_angles(dir_vals * 180.0 / np.pi) * np.pi / 180.0
         for i in range(len(dir_vals)):
             # If adding the value of the wind's direction at this altitude
             # to the set of directions at each altitude sampled so far in this
             # cluster will put the variance of the sample over the threshold,
             # OR if we are at the end of our data...
-            if np.var(np.append(cluster_vals,dir_vals[i])) > threshold or i == len(dir_vals)-1:
+            at_the_end = (i == len(dir_vals)-1)
+            too_wild = (np.var(np.append(cluster_vals,dir_vals[i])) > threshold)
+            if unbounded[i] or too_wild or at_the_end:
                 # Store the altitudes sampled in this cluster into the clusters
                 # dictionary, indexed by the order in which we added the clusters
                 self.clusters[self.n_clusters] = np.array(cluster)

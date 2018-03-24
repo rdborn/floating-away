@@ -2,6 +2,10 @@ import numpy as np
 import pandas as pd
 from scipy.stats import norm
 from sklearn import neighbors
+from sklearn.linear_model import Ridge
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.pipeline import make_pipeline
+from scipy.interpolate import LinearNDInterpolator
 
 import os, sys, inspect
 sys.path.insert(1, os.path.join(sys.path[0],'..'))
@@ -10,6 +14,7 @@ from pyutils.pyutils import parsekw, hash3d, warning, compare, vector_sum, rng
 from pyutils.constants import M_2_KM, DEG_2_RAD, KNT_2_MPS
 from skewt import SkewT
 from pynoaa.databringer import fetch
+import pyutils.pyutils as pyutils
 
 KM_2_NAUTMI = 0.539957
 NAUTMI_2_KM = 1.0 / KM_2_NAUTMI
@@ -138,6 +143,7 @@ class NOAAField:
 		self.origin = parsekw(kwargs, 'origin', np.array([37.0, -121.0]))
 		self.lat_span_m = parsekw(kwargs, 'latspan', 120.0 * KM_2_M)
 		self.lon_span_m = parsekw(kwargs, 'lonspan', 120.0 * KM_2_M)
+		self.hrs_ahead = parsekw(kwargs, 'hoursahead', 15)
 		self.min_lat = self.origin[0] - self.lat_span_m * M_2_DEGLAT
 		self.max_lat = self.origin[0] + self.lat_span_m * M_2_DEGLAT
 		self.min_lon = self.origin[1] - self.lon_span_m * M_2_DEGLAT
@@ -145,7 +151,7 @@ class NOAAField:
 		self.min_lon = self.min_lon if self.min_lon > 0 else self.min_lon + 180.0
 		self.max_lon = self.max_lon if self.max_lon > 0 else self.max_lon + 180.0
 		self.origin[1] = self.origin[1] if self.origin[1] > 0 else self.origin[1] + 180.0
-		self.data = fetch(self.min_lat, self.min_lon, self.max_lat, self.max_lon, 15)
+		self.data = fetch(self.min_lat, self.min_lon, self.max_lat, self.max_lon, self.hrs_ahead)
 		self.field = dict()
 		self.coords = dict()
 		for d in self.data:
@@ -158,14 +164,22 @@ class NOAAField:
 			p[1] = (p[1] - self.origin[1]) * DEGLAT_2_M
 			self.coords[hash3d(p)] = p
 			self.field[hash3d(p)] = [magnitude, direction]
-		n_neighbors = 4
-		self.knn_vnorth = neighbors.KNeighborsRegressor(n_neighbors, weights='distance')
-		self.knn_veast = neighbors.KNeighborsRegressor(n_neighbors, weights='distance')
+		n_neighbors = 2
+		degree = 3
+		radius = 30000
+		# self.model_vnorth = neighbors.KNeighborsRegressor(n_neighbors, weights=pyutils.dist_weights)
+		# self.model_veast = neighbors.KNeighborsRegressor(n_neighbors, weights=pyutils.dist_weights)
+		# self.model_vnorth = make_pipeline(PolynomialFeatures(degree), Ridge())
+		# self.model_veast = make_pipeline(PolynomialFeatures(degree), Ridge())
+		# self.model_vnorth = neighbors.RadiusNeighborsRegressor(radius, weights='distance')
+		# self.model_veast = neighbors.RadiusNeighborsRegressor(radius, weights='distance')
 		X = self.data[:,0:3]
 		Ynorth = self.data[:,3]
 		Yeast = self.data[:,4]
-		self.knn_vnorth.fit(X, Ynorth)
-		self.knn_veast.fit(X, Yeast)
+		# self.model_vnorth.fit(X, Ynorth)
+		# self.model_veast.fit(X, Yeast)
+		self.model_vnorth = LinearNDInterpolator(X, Ynorth, fill_value=0)
+		self.model_veast = LinearNDInterpolator(X, Yeast, fill_value=0)
 		self.pmin = np.array([-self.lat_span_m, -self.lon_span_m, np.min(self.data[:,2])])
 		self.pmax = np.array([self.lat_span_m, self.lon_span_m, np.max(self.data[:,2])])
 
@@ -178,14 +192,18 @@ class NOAAField:
 		"""
 
 		p = np.array(parsekw(kwargs, 'p', np.inf))
+		# print(p)
 		if (compare(p, np.inf)).any():
 			return warning("No point specified. Cannot get flow.")
 		# p[0] = self.origin[0] + p[0] * M_2_KM * KM_2_NAUTMI * NAUTMI_2_DEGLAT
 		# p[0] = self.origin[0] + p[0] * M_2_KM * KM_2_NAUTMI * NAUTMI_2_DEGLAT
 		# p[1] = self.origin[1] + p[1] * M_2_KM * KM_2_NAUTMI * NAUTMI_2_DEGLAT
-		vnorth = self.knn_vnorth.predict(np.atleast_2d(p))
-		veast = self.knn_veast.predict(np.atleast_2d(p))
+		# vnorth = self.model_vnorth.predict(np.atleast_2d(p))
+		# veast = self.model_veast.predict(np.atleast_2d(p))
+		vnorth = self.model_vnorth(p)
+		veast = self.model_veast(p)
 		magnitude = np.sqrt(vnorth**2 + veast**2)
+		magnitude[magnitude > 50.0] = 50.0
 		direction = np.arctan2(veast, vnorth)
 		return [magnitude, direction]
 

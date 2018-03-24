@@ -1,6 +1,12 @@
 import numpy as np
 from scipy.stats import norm
 
+def dist_weights(d):
+    inv_d = 1.0 / d
+    sum_inv_d = np.sum(inv_d)
+    weights = inv_d / sum_inv_d
+    return weights
+
 def get_angle_range(x, y, stdx, stdy):
     theta_nom = rad2deg(np.arctan2(y, x))
     if stdx < abs(x):

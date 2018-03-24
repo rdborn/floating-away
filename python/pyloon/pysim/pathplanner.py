@@ -69,9 +69,12 @@ class PathPlanner:
                                                         fieldestimator=kwargs.get('fieldestimator'),
                                                         lower=kwargs.get('lower'),
                                                         upper=kwargs.get('upper'))
+        elif planner == 'naive':
+            self.planner = loonpathplanner.NaivePlanner(resamplethreshold=kwargs.get('resamplethreshold'),
+                                                        trusttime=kwargs.get('trusttime'))
 
     def plan(self, *args, **kwargs):
-        return self.planner.plan(  loon=kwargs.get('loon'),
+        return self.planner.plan(loon=kwargs.get('loon'),
                             u=kwargs.get('u'),
                             T=kwargs.get('T'),
                             pstar=kwargs.get('pstar'),
