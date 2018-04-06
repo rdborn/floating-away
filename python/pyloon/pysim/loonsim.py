@@ -115,7 +115,7 @@ class LoonSim:
 					                            depth=kwargs.get('depth'),
 												tcurr=self.tcurr,
 												gamma=kwargs.get('gamma'))
-												
+
 	def propogate(self, u, **kwargs):
 		"""
 		Propogate the simulation by one sampling period for a given control input.
@@ -191,17 +191,6 @@ class LoonSim:
 		self.pathplanner.planner.add_sample(p=p,
 									magnitude=magnitude+rng(1),
 									direction=direction+rng(0.1))
-
-	""" DEPRECATED """
-	def __plot__(self):
-		"""
-		Plot the balloon's position history since the last time this function was called.
-		"""
-		self.history_plot.scatter(	self.loon_history['x'][self.prev_plot_idx:],
-									self.loon_history['y'][self.prev_plot_idx:],
-									self.loon_history['z'][self.prev_plot_idx:])
-		self.prev_plot_idx = len(self.loon_history['x']) - 1
-		plt.pause(0.0001)
 
 	def plot(self, *args, **kwargs):
 		out_file = parsekw(kwargs, 'outfile', 'ERR_NO_FILE')
