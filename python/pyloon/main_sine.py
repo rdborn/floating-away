@@ -1,3 +1,7 @@
+############################################
+# DEPRECATED
+############################################
+
 from loonsim import LoonSim
 from optiloon.loonpathplanner import LoonPathPlanner
 import numpy as np

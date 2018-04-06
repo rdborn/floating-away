@@ -25,8 +25,10 @@ class LoonSim:
 		self.dt = 1.0 / self.Fs
 		self.tcurr = 0.0
 		self.tlast = 0.0
+		self.resetting = False
 		i_should_plot = parsekw(kwargs, 'plot', True)
 		i_should_plot_to_file = parsekw(kwargs, 'plottofile', False)
+		self.samplingtime = parsekw(kwargs, 'samplingtime', 0.)
 		print("Setting up environment...")
 		self.environment = Environment(	type=kwargs.get('environment'),
 										file=kwargs.get('file'),
@@ -67,11 +69,10 @@ class LoonSim:
 			#	|				|	|	 |  |    |  |    |  |          |
 			#	|				|	|	 |  |    |  |    |  |          |
 			#	|_______________|	|	 |  |    |  |    |  |          |
-			#	________________    |	 |  |    |  |    |  |          |
-			#	|              |    |	 |  |    |  |    |  |          |
-			#	|______________|	|____|  |____|  |____|  |__________|
+			#	_________________   |	 |  |    |  |    |  |          |
+			#	|                |  |	 |  |    |  |    |  |          |
+			#	|________________|	|____|  |____|  |____|  |__________|
 			#
-			# self.history_plot = plt.figure().gca(projection='3d')
 			self.fancy_plot = plt.figure()
 			self.fancy_plot.set_figheight(5.0)
 			self.fancy_plot.set_figwidth(8.0)
@@ -84,15 +85,16 @@ class LoonSim:
 			self.ax_plan = self.fancy_plot.add_subplot(		gs[:,			7*pad:], sharey=self.ax_alt_mag)
 			self.ax_cost = self.fancy_plot.add_subplot(		gs[4*pad-1:,	:4*pad-1])
 			self.prev_plot_idx = 0
-			im = Image.open('stanford_area.png').convert('L')
-			# im = plt.imread('stanford_area.png')
+			im = Image.open('stanford_area.png').convert('L') # grayscale
+			# im = plt.imread('stanford_area.png') # color
 			self.ax_latlon.imshow(im, extent=(-100,100,-100,100), cmap='gray')
 			if not i_should_plot_to_file:
 				plt.ion()
-		self.loon_history = DataFrame(columns=['t','x','y','z','vx','vy','vz'])
-		loon_initial_pos = DataFrame([[self.tcurr, self.loon.x, self.loon.y, self.loon.z, 0.0, 0.0, 0.0]], columns=['t','x','y','z','vx','vy','vz'])
+		self.loon_history = DataFrame(columns=['t','x','y','z','vx','vy','vz','stdx','stdy'])
+		loon_initial_pos = DataFrame([[self.tcurr, self.loon.x, self.loon.y, self.loon.z, 0.0, 0.0, 0.0, 0.0, 0.0]], columns=['t','x','y','z','vx','vy','vz','stdx','stdy'])
 		self.loon_history = self.loon_history.append(loon_initial_pos, ignore_index=True)
 
+	""" NOT SUPPORTED """
 	def __str__(self):
 		"""
 		Return current balloon position and flow at that position.
@@ -113,7 +115,8 @@ class LoonSim:
 					                            depth=kwargs.get('depth'),
 												tcurr=self.tcurr,
 												gamma=kwargs.get('gamma'))
-	def propogate(self, u):
+												
+	def propogate(self, u, **kwargs):
 		"""
 		Propogate the simulation by one sampling period for a given control input.
 
@@ -122,27 +125,74 @@ class LoonSim:
 		# NOTE: terminal velocity is assumed at every time step
 		#       (i.e. drag force reaches zero arbitrarily fast)
 
+		dontsample = parsekw(kwargs, 'dontsample', False)
+		alwayssample = parsekw(kwargs, 'alwayssample', False)
+
 		p = self.loon.get_pos()
 		vx, vy = self.environment.get_flow(p=p, t=self.tcurr)
+		vx_pred, vy_pred, stdx, stdy = self.pathplanner.planner.predict(p)
+
+		# Hacky way to push the agent back into the field
+		# if it leaves the defined area
 		magnitude = np.log(np.sqrt(p[0]**2 + p[1]**2) + 1)
 		direction = np.arctan2(p[1], p[0]) + np.pi
 		vx = vx if (abs(vx) > 0) else (magnitude * np.cos(direction))
 		vy = vy if (abs(vy) > 0) else (magnitude * np.sin(direction))
+
 		vz = u
 		w = 1.0
 		vloon = self.loon.get_vel()
 		self.loon.update(vx=vx+rng(w), vy=vy+rng(w), vz=vz+rng(w))
 		self.tcurr += self.dt
+
 		loon_record = DataFrame([[self.tcurr,
 								self.loon.x,
 								self.loon.y,
 								self.loon.z,
 								vx,
 								vy,
-								vz]],
-								columns=['t','x','y','z','vx','vy','vz'])
+								vz,
+								stdx[0],
+								stdy[0]]],
+								columns=['t','x','y','z','vx','vy','vz','stdx','stdy'])
 		self.loon_history = self.loon_history.append(loon_record, ignore_index=True)
 
+		p = self.loon.get_pos()
+		i_want_to_sample = (abs(p[2] - self.pathplanner.planner.alts_to_sample) < 30)
+		if i_want_to_sample.any():
+			if dontsample:
+				pass
+			else:
+				if alwayssample:
+					print("Omg we're sampling")
+					self.pathplanner.planner.alts_to_sample = self.pathplanner.planner.alts_to_sample[i_want_to_sample == False]
+					self.sample()
+					t_sample = self.tcurr
+					while (self.tcurr - t_sample) < self.samplingtime:
+						self.propogate(0, dontsample=True)
+				else:
+					pstar = np.zeros(3)
+					vx_samp, vy_samp, stdx_samp, stdy_samp = self.pathplanner.planner.predict(p)
+					going_the_right_way = self.pathplanner.planner.__cost_of_vel__(p[0:2], pstar,np.array([vx_samp, vy_samp])) < 1
+					if going_the_right_way:
+						print("Omg we're sampling")
+						self.pathplanner.planner.alts_to_sample = self.pathplanner.planner.alts_to_sample[i_want_to_sample == False]
+						self.sample()
+						t_sample = self.tcurr
+						while (self.tcurr - t_sample) < self.samplingtime:
+							self.propogate(0, dontsample=True)
+
+	def sample(self):
+		"""
+		Sample the wind velocity at the balloon's current position.
+		"""
+		p = self.loon.get_pos()
+		magnitude, direction = self.environment.wind.get_flow(p=p)
+		self.pathplanner.planner.add_sample(p=p,
+									magnitude=magnitude+rng(1),
+									direction=direction+rng(0.1))
+
+	""" DEPRECATED """
 	def __plot__(self):
 		"""
 		Plot the balloon's position history since the last time this function was called.
@@ -168,14 +218,24 @@ class LoonSim:
 		all_lats = np.array(self.loon_history['x'][:])
 		all_lons = np.array(self.loon_history['y'][:])
 		all_alts = np.array(self.loon_history['z'][:])
+		all_stdxs = np.array(self.loon_history['stdx'][:])
+		all_stdys = np.array(self.loon_history['stdy'][:])
+		all_stdxs= np.sqrt(np.cumsum(all_stdxs**2 * self.dt))
+		all_stdys= np.sqrt(np.cumsum(all_stdys**2 * self.dt))
 		all_dists = np.sqrt(all_lats**2 + all_lons**2)
 		all_t = self.dt * np.array(range(len(all_dists)))
 		avg_dists = np.cumsum(all_dists) / all_t
 		avg_d_alt = np.cumsum(abs(all_alts[1:] - all_alts[:-1]))
 		avg_d_alt = np.append(np.zeros(1), avg_d_alt) / all_t
+		avg_stdxs = np.cumsum(all_stdxs**2) / all_t
+		avg_stdys = np.cumsum(all_stdys**2) / all_t
 		# Get rid of the NaN from dividing by initial time = 0
 		avg_dists[0] = 0
 		avg_d_alt[0] = 0
+		avg_stdxs[0] = 0
+		avg_stdys[0] = 0
+		avg_stdxs = np.sqrt(avg_stdxs)
+		avg_stdys = np.sqrt(avg_stdys)
 
 		self.prev_plot_idx = len(self.loon_history['x']) - 1
 
@@ -240,10 +300,12 @@ class LoonSim:
 			vlat_test = np.squeeze(vlat_test)
 			vlon_test = np.squeeze(vlon_test)
 			mag_test = np.sqrt(vlat_test**2 + vlon_test**2)
-			mag_test_bound1 = np.sqrt((vlat_test + std_x)**2 + (vlon_test + std_y)**2)
-			mag_test_bound2 = np.sqrt((vlat_test - std_x)**2 + (vlon_test - std_y)**2)
-			mag_test_bound3 = np.sqrt((vlat_test + std_x)**2 + (vlon_test - std_y)**2)
-			mag_test_bound4 = np.sqrt((vlat_test - std_x)**2 + (vlon_test + std_y)**2)
+			vlatmin, vlatmax = pyutils.get_samesign_bounds(vlat_test, std_x)
+			vlonmin, vlonmax = pyutils.get_samesign_bounds(vlon_test, std_y)
+			mag_test_bound1 = np.sqrt(vlatmax**2 + vlonmax**2)
+			mag_test_bound2 = np.sqrt(vlatmax**2 + vlonmin**2)
+			mag_test_bound3 = np.sqrt(vlatmin**2 + vlonmax**2)
+			mag_test_bound4 = np.sqrt(vlatmin**2 + vlonmin**2)
 			mag_test_upper = np.max([mag_test_bound1,
 									mag_test_bound2,
 									mag_test_bound3,
@@ -252,9 +314,6 @@ class LoonSim:
 									mag_test_bound2,
 									mag_test_bound3,
 									mag_test_bound4], axis=0)
-			zero_mag = ((np.array(abs(vlat_test) < std_x, dtype=int) + \
-						np.array(abs(vlon_test) < std_y, dtype=int)) == 2)
-			mag_test_lower[zero_mag] = 0.0
 
 			dir_test = np.zeros(len(vlat_test))
 			dir_lower = np.zeros(len(vlat_test))
@@ -262,9 +321,6 @@ class LoonSim:
 			for i in range(len(vlat_test)):
 				dir_lower[i], dir_test[i], dir_upper[i] = pyutils.get_angle_range(vlat_test[i], vlon_test[i], std_x[i], std_y[i])
 			unbounded_idx = (abs(abs(dir_lower - dir_upper) - 360) < 1e-6)
-			# dir_test = pyutils.continuify_angles(dir_test)
-			# dir_lower = pyutils.continuify_angles(dir_lower)
-			# dir_upper = pyutils.continuify_angles(dir_upper)
 			dir_test = dir_test % 360
 			dir_lower = dir_lower % 360
 			dir_upper = dir_upper % 360
@@ -286,6 +342,10 @@ class LoonSim:
 		# PLOT
 		avg_ctrl_hist, = self.ax_cost.plot(all_t/3600.0, avg_d_alt*1e1, c=0.3*np.ones(3), linestyle='dashed')
 		avg_dist_hist, = self.ax_cost.plot(all_t/3600.0, avg_dists*1e-2, c=0.6*np.ones(3))
+		avg_stdx_hist, = self.ax_cost.plot(all_t/3600.0, avg_stdxs*1e-1, c='b', linestyle='dashed')
+		avg_stdy_hist, = self.ax_cost.plot(all_t/3600.0, avg_stdys*1e-1, c='r', linestyle='dashed')
+		all_stdx_hist, = self.ax_cost.plot(all_t/3600.0, all_stdxs*1e-2, c='b')
+		all_stdy_hist, = self.ax_cost.plot(all_t/3600.0, all_stdys*1e-2, c='r')
 		dist_hist, = self.ax_cost.plot(t/3600.0, dists*1e-3, c='k')
 		if naive:
 			dir_profile = self.ax_alt_dir.scatter((sampled_dirs * 180.0 / np.pi) % 360, sampled_alts*1e-3, c='k')
@@ -379,16 +439,10 @@ class LoonSim:
 		mag_profile_truth.remove()
 		avg_dist_hist.remove()
 		avg_ctrl_hist.remove()
+		avg_stdx_hist.remove()
+		all_stdx_hist.remove()
+		all_stdy_hist.remove()
+		avg_stdy_hist.remove()
 
 		print('\tavg dist, avg ctrl, time:')
 		print('\t\t' + str(avg_dists[-1]) + "\t" + str(avg_d_alt[-1]) + "\t" + str(all_t[-1]/3600.0))
-
-	def sample(self):
-		"""
-		Sample the wind velocity at the balloon's current position.
-		"""
-		p = self.loon.get_pos()
-		magnitude, direction = self.environment.wind.get_flow(p=p)
-		self.pathplanner.planner.add_sample(p=p,
-									magnitude=magnitude+rng(1),
-									direction=direction+rng(0.1))

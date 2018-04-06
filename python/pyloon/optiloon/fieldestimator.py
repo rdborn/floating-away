@@ -15,15 +15,39 @@ from pyutils import pyutils
 class FieldEstimator:
     def __init__(self, *args, **kwargs):
         self.estimators = dict()
+        self.recently_sampled_X = dict()
+        self.recently_sampled_y = dict()
+        self.expiring_X = dict()
+        self.expiring_y = dict()
         self.X = dict()
         self.y = dict()
 
-    def fit(self, *args, **kwargs):
-        key = parsekw(kwargs, 'key', None)
+    def __reset__(self, key):
+        if key in self.recently_sampled_X.keys():
+            self.expiring_X[key] = copy.deepcopy(self.recently_sampled_X[key])
+            self.expiring_y[key] = copy.deepcopy(self.recently_sampled_y[key])
+            self.recently_sampled_X[key] = []
+            self.recently_sampled_y[key] = []
+
+    def __build_data__(self, key):
         X = self.X[key]
         y = self.y[key]
+        if reset:
+            self.__reset__(key)
+        if key in self.recently_sampled_X.keys():
+            X = np.append(X, self.recently_sampled_X[key])
+            y = np.append(y, self.recently_sampled_y[key])
+        if key in self.expiring_X.keys():
+            X = np.append(X, self.expiring_X[key])
+            y = np.append(y, self.expiring_y[key])
         X = X.reshape(-1,1) if len(X.shape) == 1 else X
         y = y.reshape(-1,1)
+        return X, y
+
+    def fit(self, *args, **kwargs):
+        key = parsekw(kwargs, 'key', None)
+        reset = parsekw(kwargs, 'reset', True)
+        X, y = self.__build_data__(key)
         self.estimators[key].fit(X, y)
 
     def predict(self, *args, **kwargs):
@@ -38,6 +62,17 @@ class FieldEstimator:
         else:
             prediction = self.estimators[key].predict(p, return_std=return_std)
             return prediction
+
+    def add_data(self, *args, **kwargs):
+        key = parsekw(kwargs, 'key', None)
+        new_X = parsekw(kwargs, 'X', None)
+        new_y = parsekw(kwargs, 'y', None)
+        if key in self.recently_sampled_X.keys():
+            self.recently_sampled_X[key] = np.append(self.recently_sampled_X[key], new_X)
+            self.recently_sampled_y[key] = np.append(self.recently_sampled_y[key], new_y)
+        else:
+            self.recently_sampled_X[key] = new_X
+            self.recently_sampled_y[key] = new_y
 
     def changing_estimators(self, *args, **kwargs):
         return False
@@ -55,15 +90,17 @@ class GPFE(FieldEstimator):
         self.X[key] = parsekw(kwargs, 'X', None)
         self.y[key] = parsekw(kwargs, 'y', None)
         FieldEstimator.fit(self, key=key)
+        # Partition the data just so we can detect when we need to rebuild
+        # the jetstreams (does not affect GP)
         if len(self.X[key][0]) > 1:
             self.__partition__(self.X[key], self.y[key])
 
     def predict(self, *args, **kwargs):
         key = 0
         return FieldEstimator.predict(self,
-                                        key=key,
-                                        p=kwargs.get('p'),
-                                        return_std=kwargs.get('return_std'))
+                                    key=key,
+                                    p=kwargs.get('p'),
+                                    return_std=kwargs.get('return_std'))
 
     def __partition__(self, X, y):
         self.estimator_locations = dict()
@@ -113,20 +150,25 @@ class Multi1DGP(FieldEstimator):
     def fit(self, *args, **kwargs):
         X = parsekw(kwargs, 'X', None)
         y = parsekw(kwargs, 'y', None)
+        restrict_data = parsekw(kwargs, 'restrict', False)
+        restriction = parsekw(kwargs, 'restriction', 0.5)
         default_kernel = C(1.0, (1e-3, 1e3)) * RBF(0.5, (1e-6, 1e0))
         kernel = parsekw(kwargs, 'kernel', default_kernel)
         n_restarts_optimizer = parsekw(kwargs, 'n_restarts_optimizer', 9)
         print("\t\tpartitioning...")
+        self.X = dict()
+        self.y = dict()
         self.__partition__(X, y)
-        i = 0
-        for key in self.estimator_locations.keys():
+        if restrict_data:
+            self.__restrict__(restriction)
+        for i, key in enumerate(self.estimator_locations.keys()):
             self.prediction_key = key
-            i += 1
+            # print progress and lateral coordinates of this estimator
             print("\t\t" + str(i) + "/" + str(len(self.estimator_locations.keys())) + \
-            "\t(" + str(self.estimator_locations[key][0]) + ", " + \
-            str(self.estimator_locations[key][1]) + ")")
+                "\t(" + str(self.estimator_locations[key][0]) + ", " + \
+                str(self.estimator_locations[key][1]) + ")")
             self.estimators[key] = GPR(kernel=kernel, n_restarts_optimizer=n_restarts_optimizer)
-            FieldEstimator.fit(self, key=key)
+            FieldEstimator.fit(self, key=key, reset=True)
 
     def predict(self, *arg, **kwargs):
         radius = parsekw(kwargs, 'radius', 40000)
@@ -136,6 +178,46 @@ class Multi1DGP(FieldEstimator):
                                     key=self.prediction_key,
                                     p=p[:,2],
                                     return_std=kwargs.get('return_std'))
+
+    def __restrict__(self, restriction):
+        if restriction == 1:
+            return
+        if restriction < 1:
+            if restriction > 0.5:
+                print("WARNING: restriction between 0.5 and 1.0 is meaningless, taking no action")
+                return
+            else:
+                n_to_keep = 1
+                n_to_skip = np.int(np.round( 1. / restriction ))
+        else:
+            n_to_keep = restriction
+            n_to_skip = 1
+
+        for i, key in enumerate(self.X.keys()):
+            skip_counter = 0
+            keep_counter = 0
+            # Sort data in order of altitude
+            sort_idx = np.argsort(self.X[key])
+            X_curr = self.X[key][sort_idx]
+            y_curr = self.y[key][sort_idx]
+            X_new = []
+            y_new = []
+            keeping = True
+            for j, x in enumerate(X_curr):
+                if keeping:
+                    X_new.append(X_curr[j])
+                    y_new.append(y_curr[j])
+                    keep_counter += 1
+                    if keep_counter == n_to_keep:
+                        keeping = False
+                        keep_counter = 0
+                else:
+                    skip_counter += 1
+                    if skip_counter == n_to_skip:
+                        keeping = True
+                        skip_counter = 0
+            self.X[key] = np.array(X_new)
+            self.y[key] = np.array(y_new)
 
     def __partition__(self, X, y):
         self.estimator_locations = dict()
@@ -173,6 +255,13 @@ class Multi1DGP(FieldEstimator):
                     self.prediction_key = key
                     return True
         return False
+
+    def add_data(self, *args, **kwargs):
+        FieldEstimator.add_data(self,
+                                key=self.prediction_key,
+                                X=kwargs.get('X'),
+                                y=kwargs.get('y'))
+        FieldEstimator.fit(self, key=self.prediction_key, reset=False)
 
 class KNN1DGP(Multi1DGP):
     def predict(self, *arg, **kwargs):

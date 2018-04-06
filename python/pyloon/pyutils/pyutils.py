@@ -1,6 +1,21 @@
 import numpy as np
 from scipy.stats import norm
 
+def get_samesign_bounds(x, stdx):
+    if len(np.squeeze(np.array(x)).shape) == 0:
+        xmax = np.sign(x) * np.max([np.sign(x) * (x + stdx), 0.0])
+        xmin = np.sign(x) * np.max([np.sign(x) * (x - stdx), 0.0])
+    else:
+        x = np.array(x)
+        stdx = np.array(stdx)
+        xmax = np.sign(x) * (x + stdx)
+        xmin = np.sign(x) * (x - stdx)
+        xmax[xmax < 0] = 0
+        xmin[xmin < 0] = 0
+        xmax = np.sign(x) * xmax
+        xmin = np.sign(x) * xmin
+    return xmin, xmax
+
 def dist_weights(d):
     inv_d = 1.0 / d
     sum_inv_d = np.sum(inv_d)
@@ -9,6 +24,9 @@ def dist_weights(d):
 
 def get_angle_range(x, y, stdx, stdy):
     theta_nom = rad2deg(np.arctan2(y, x))
+    xmin, xmax = get_samesign_bounds(x, stdx)
+    ymin, ymax = get_samesign_bounds(y, stdy)
+
     if stdx < abs(x):
         if stdy < abs(y):
             theta_upper = rad2deg(np.arctan2(y + np.sign(x) * stdy, x - np.sign(y) * stdx))

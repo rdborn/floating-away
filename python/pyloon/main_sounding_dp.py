@@ -1,3 +1,7 @@
+############################################
+# DEPRECATED
+############################################
+
 from loonsim import LoonSim
 from optiloon.loonpathplanner import MonteCarloPlanner as MCP
 from optiloon.loonpathplanner import PlantInvertingController as PIC

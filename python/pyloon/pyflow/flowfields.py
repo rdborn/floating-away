@@ -12,9 +12,13 @@ sys.path.insert(1, os.path.join(sys.path[0],'..'))
 
 from pyutils.pyutils import parsekw, hash3d, warning, compare, vector_sum, rng
 from pyutils.constants import M_2_KM, DEG_2_RAD, KNT_2_MPS
-from skewt import SkewT
-from pynoaa.databringer import fetch
 import pyutils.pyutils as pyutils
+
+# Needed for sounding field only:
+from skewt import SkewT
+
+# Needed for NOAA field only:
+from pynoaa.databringer import fetch
 
 KM_2_NAUTMI = 0.539957
 NAUTMI_2_KM = 1.0 / KM_2_NAUTMI
@@ -41,6 +45,7 @@ class FlowField:
 		self.field = dict()
 		self.coords = dict()
 
+	""" NOT SUPPORTED """
 	def __str__(self):
 		"""
 		NOT SUPPORTED
@@ -49,6 +54,7 @@ class FlowField:
 
 		return self.type
 
+	""" HASN'T BEEN USED IN A WHILE """
 	def set_flow(self, *args, **kwargs):
 		"""
 		Set the flow at a particular spot in the flow field.
@@ -70,6 +76,7 @@ class FlowField:
 		self.coords[hash3d(p)] = p
 		return True
 
+	""" HASN'T BEEN USED IN A WHILE """
 	def get_flow(self, *args, **kwargs):
 		"""
 		Get the flow at a particular point in the flow field.
@@ -88,6 +95,7 @@ class FlowField:
 			return warning("Flow not set. Cannot get flow.")
 		return self.field[hash3d(p)]
 
+	""" HASN'T BEEN USED IN A WHILE """
 	def __check_validity__(self, p):
 		"""
 		Check whether a point is in the flow field.
@@ -167,17 +175,9 @@ class NOAAField:
 		n_neighbors = 2
 		degree = 3
 		radius = 30000
-		# self.model_vnorth = neighbors.KNeighborsRegressor(n_neighbors, weights=pyutils.dist_weights)
-		# self.model_veast = neighbors.KNeighborsRegressor(n_neighbors, weights=pyutils.dist_weights)
-		# self.model_vnorth = make_pipeline(PolynomialFeatures(degree), Ridge())
-		# self.model_veast = make_pipeline(PolynomialFeatures(degree), Ridge())
-		# self.model_vnorth = neighbors.RadiusNeighborsRegressor(radius, weights='distance')
-		# self.model_veast = neighbors.RadiusNeighborsRegressor(radius, weights='distance')
 		X = self.data[:,0:3]
 		Ynorth = self.data[:,3]
 		Yeast = self.data[:,4]
-		# self.model_vnorth.fit(X, Ynorth)
-		# self.model_veast.fit(X, Yeast)
 		self.model_vnorth = LinearNDInterpolator(X, Ynorth, fill_value=0)
 		self.model_veast = LinearNDInterpolator(X, Yeast, fill_value=0)
 		self.pmin = np.array([-self.lat_span_m, -self.lon_span_m, np.min(self.data[:,2])])
@@ -195,11 +195,6 @@ class NOAAField:
 		# print(p)
 		if (compare(p, np.inf)).any():
 			return warning("No point specified. Cannot get flow.")
-		# p[0] = self.origin[0] + p[0] * M_2_KM * KM_2_NAUTMI * NAUTMI_2_DEGLAT
-		# p[0] = self.origin[0] + p[0] * M_2_KM * KM_2_NAUTMI * NAUTMI_2_DEGLAT
-		# p[1] = self.origin[1] + p[1] * M_2_KM * KM_2_NAUTMI * NAUTMI_2_DEGLAT
-		# vnorth = self.model_vnorth.predict(np.atleast_2d(p))
-		# veast = self.model_veast.predict(np.atleast_2d(p))
 		vnorth = self.model_vnorth(p)
 		veast = self.model_veast(p)
 		magnitude = np.sqrt(vnorth**2 + veast**2)
@@ -245,6 +240,7 @@ class PlanarField(FlowField):
 									magnitude=kwargs.get('magnitude'),
 									direction=kwargs.get('direction'))
 
+	""" HASN'T BEEN USED IN A WHILE """
 	def get_flow(self, *args, **kwargs):
 		"""
 		Get flow at a given point.
@@ -258,6 +254,7 @@ class PlanarField(FlowField):
 			return warning("No point specified. Cannot get flow.")
 		return self.__interp__(z=p[2])
 
+	""" HASN'T BEEN USED IN A WHILE """
 	def __interp__(self, *args, **kwargs):
 		"""
 		Interpolate between points with explicit values to get field value at a given point.
@@ -288,6 +285,7 @@ class PlanarField(FlowField):
 		interp_mag, interp_angle = vector_sum(k1 * p1mag, p1dir, k2 * p2mag, p2dir)
 		return interp_mag, interp_angle
 
+""" HASN'T BEEN USED IN A WHILE """
 class SoundingField(PlanarField):
 	def __init__(self, *args, **kwargs):
 		file = parsekw(kwargs, 'file', "ERR_NO_FILE")
@@ -330,6 +328,7 @@ class SoundingField(PlanarField):
 		direction = np.arctan2(vy, vx)
 		return [magnitude, direction]
 
+""" HASN'T BEEN USED IN A WHILE """
 class SineField(PlanarField):
 	def __init__(self, *args, **kwargs):
 		zmin=parsekw(kwargs, 'zmin', 0.0)
@@ -350,6 +349,7 @@ class SineField(PlanarField):
 										magnitude=magnitude,
 										direction=0.0)
 
+""" HASN'T BEEN USED IN A WHILE """
 class BrownianSoundingField(SoundingField):
 	def __init__(self, *args, **kwargs):
 		SoundingField.__init__(self, file=kwargs.get('file'))
@@ -367,6 +367,7 @@ class BrownianSoundingField(SoundingField):
 		self.brown_dir += norm.rvs(size=self.brown_dir.shape, scale=1e-6)
 		return PlanarField.get_flow(self, p=p)
 
+""" HASN'T BEEN USED IN A WHILE """
 class BrownianSineField(SineField):
 	def __init__(self, *args, **kwargs):
 		SineField.__init__(	self,

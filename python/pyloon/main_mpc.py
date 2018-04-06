@@ -14,7 +14,12 @@ from pysim.loonsim import LoonSim
 # Choose the planner algorithm and estimator scheme
 # options: montecarlo, mpc, mpcfast, ldp, wap, pic, naive
 planner = 'mpcfast'
-gamma = 1e9 # tuning parameter for cost function (lower = care more about pos, less about vel)
+alwayssample = True
+dontsample = False
+samplingtime = 4*300
+gamma = np.array([1.,1e5,0.,0.,0.,0.]) # tuning parameter for cost function (lower = care more about pos, less about vel)
+while alwayssample and gamma[-1] != 0:
+	print("WOAH you sure about that?")
 # options: gpfe, knn1dgp, multi1dgp
 fieldestimator = 'multi1dgp'
 
@@ -96,26 +101,31 @@ N = 1
 # LOCAL FUNCTIONS
 #############################################
 
-def choose_ctrl(x, xstar, buf):
-	if xstar - x > buf:
+def choose_ctrl(LS, xstar):
+	x = LS.loon.get_pos()[2]
+	x_id = LS.pathplanner.planner.jets.find(x).id
+	xstar_id = LS.pathplanner.planner.jets.find(xstar).id
+	if x_id == xstar_id:
+		return 0
+	elif xstar - x > 0:
 		return 1
-	elif xstar - x < -buf:
+	elif xstar - x < 0:
 		return -1
 	else:
 		return 0
 
-def get_there(LS, target, buf, u, T):
+def get_there(LS, target, u, T):
 	pos = LS.loon.get_pos()
 	p = pos[2]
-	c = choose_ctrl(p, target, buf)
+	c = choose_ctrl(LS, target)
 	if c == 0:
 		dt = 0.0
 		while (T - dt) > 0.0:
-			LS.propogate(c*u)
+			LS.propogate(c*u, alwayssample=alwayssample, dontsample=dontsample)
 			dt += 1.0 / LS.loon.Fs
 	else:
 		while (target - p) * c * u > 0:
-			LS.propogate(c*u)
+			LS.propogate(c*u, alwayssample=alwayssample, dontsample=dontsample)
 			p = LS.loon.get_pos()[2]
 	return LS
 
@@ -138,7 +148,7 @@ def vel_cost(pos, pstar, v):
 #############################################
 
 while True:
-	for depth in range(8,9):
+	for depth in range(4,5):
 		LS = LoonSim(planner=planner,
 					environment=environment,
 					fieldestimator=fieldestimator,
@@ -167,7 +177,8 @@ while True:
 					plot=plot,
 					plottofile=plottofile,
 					resamplethreshold=resamplethreshold,
-					trusttime=trusttime)
+					trusttime=trusttime,
+					samplingtime=samplingtime)
 
 		# points_to_sample = np.sort(np.random.uniform(lower, upper, n_samples))
 		movie_name = planner + '_' + \
@@ -187,6 +198,10 @@ while True:
 				with open((out_plot_folder + "README.txt"), "w+") as f:
 					f.write("SIMULATION PARAMETERS\n" + \
 						"Planner:\t" + planner + "\n" + \
+						"Don't sample:\t" + str(dontsample) + " (if True, overrides always sample)\n" + \
+						"Always sample:\t" + str(alwayssample) + "(shouldn't be True with gamma != [X, X, X, X, X, 0])\n"\
+						"Sampling time:\t" + str(samplingtime) + "\n" + \
+						"Reduced data:\tnope\n" + \
 						"Field Estimator:\t" + fieldestimator + "\n" + \
 						"Environment Type:\t" + environment + "\n" + \
 						"Minimum Safe Altitude:\t" + str(lower) + "\tm\n" + \
@@ -274,6 +289,11 @@ while True:
 			pol = pol[1:] if len(pol) > 1 else pol
 			print("Policy:")
 			print("\t" + str(pol))
+			# if plot:
+			# 	if plottofile:
+			# 		LS.plot(outfile=out_file, naive=(planner=='naive'))
+			# 	else:
+			# 		LS.plot(naive=(planner=='naive'))
 			# If the policy was negative, that was a sign from the naive path planner
 			# that it needs to retrain, so we need to sample the air column
 			if pol[0] < 0:
@@ -286,7 +306,7 @@ while True:
 				# Go to the edge of the air column
 				# Go to the other edge of the air column, sampling the field along the way
 				for sample_alt in points_to_sample:
-					LS = get_there(LS, sample_alt, buf, u, T)
+					LS = get_there(LS, sample_alt, u, T)
 					LS.sample()
 				LS.pathplanner.planner.retrain()
 			else:
@@ -295,15 +315,11 @@ while True:
 						break
 					print("Moving to altitude:")
 					print("\t" + str(np.int(pol[i])))
-					LS = get_there(LS, pol[i], buf, u, T)
+					LS = get_there(LS, pol[i], u, T)
 			pos = LS.loon.get_pos()
 			print("New position:")
 			print("\t(" + str(np.int(pos[0])) + ", " + str(np.int(pos[1])) + ", " + str(np.int(pos[2])) + ")")
-			if plot:
-				if plottofile:
-					LS.plot(outfile=out_file, naive=(planner=='naive'))
-				else:
-					LS.plot(naive=(planner=='naive'))
+
 			all_lats = np.array(LS.loon_history['x'][:])
 			all_lons = np.array(LS.loon_history['y'][:])
 			all_dists = np.sqrt(all_lats**2 + all_lons**2)
@@ -320,11 +336,13 @@ while True:
 		vx = LS.loon_history['vx'][:]
 		vy = LS.loon_history['vy'][:]
 		vz = LS.loon_history['vz'][:]
+		stdx = LS.loon_history['stdx'][:]
+		stdy = LS.loon_history['stdy'][:]
 		with open((record_folder + record_name + ".csv"), "w+") as f:
 			f.write("jpos calculated as ||(x,y) - (xstar,ystar)||_2\n")
 			f.write("jvel calculated as ((((x,y) - (xstar,ystar))_hat . (vx,vy)_hat) + 1), where ()_hat is a normalizing operator\n")
 			f.write("jtot calculated as ln(jpos((jvel)(gamma)+1))\n")
-			f.write("t,xstar,ystar,zstar,x,y,z,vx,vy,vz,jpos,jvel,jtot\n")
+			f.write("t,xstar,ystar,zstar,x,y,z,vx,vy,vz,jpos,jvel,jtot,stdx,stdy\n")
 			for i in range(len(t)):
 				J_pos = (np.sum((np.array([x[i],y[i]]) - pstar[0:2])**2))
 				J_vel = vel_cost(np.array([x[i],y[i]]), pstar, np.array([vx[i],vy[i]]))
@@ -341,7 +359,9 @@ while True:
 						str(vz[i]) + "," + \
 						str(J_pos) + "," + \
 						str(J_vel) + "," + \
-						str(J_tot) + \
+						str(J_tot) + "," + \
+						str(stdx[i]) + "," + \
+						str(stdy[i]) + \
 						"\n")
 
 		# Make a movie

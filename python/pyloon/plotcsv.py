@@ -48,6 +48,8 @@ def extract_data(csvfile):
     jpos = []
     jvel = []
     jtot = []
+    stdx = []
+    stdy = []
     with open(csvfile) as f:
         reader = csv.reader(f)
         i = 0
@@ -67,7 +69,11 @@ def extract_data(csvfile):
                 vz.append(process(row[9]))
                 jpos.append(process(row[10]))
                 jvel.append(process(row[11]))
-                jtot.append(process(row[12]))
+                jtot.append(jpos[-1] + jvel[-1] * 1e5)
+                # jtot.append(process(row[12]))
+                if len(row) > 13:
+                    stdx.append(process(row[13]))
+                    stdy.append(process(row[14]))
     t = np.array(t)
     xstar = np.array(xstar)
     ystar = np.array(ystar)
@@ -81,7 +87,9 @@ def extract_data(csvfile):
     jpos = np.array(jpos)
     jvel = np.array(jvel)
     jtot = np.array(jtot)
-    return t, xstar, ystar, zstar, x, y, z, vx, vy, vz, jpos, jvel, jtot
+    stdx = np.array(stdx)
+    stdy = np.array(stdy)
+    return t, xstar, ystar, zstar, x, y, z, vx, vy, vz, jpos, jvel, jtot, stdx, stdy
 
 def get_data_n_samples(parent_dir, n):
     directories = get_dirs_n_samples(parent_dir, n)
@@ -98,26 +106,31 @@ def get_data_n_samples(parent_dir, n):
     jpos = []
     jvel = []
     jtot = []
+    stdx = []
+    stdy = []
     print("Extracting from...")
     for directory in directories:
-        print("\t" + directory)
-        csvfile = directory + directory[len('./naives/fig_'):-1] + '.csv'
-        t_i, xstar_i, ystar_i, zstar_i, x_i, y_i, z_i, vx_i, vy_i, vz_i, jpos_i, jvel_i, jtot_i = extract_data(csvfile)
-        if not np.array(t_i == -np.inf).any():
-            t.append(t_i)
-            xstar.append(xstar_i)
-            ystar.append(ystar_i)
-            zstar.append(zstar_i)
-            x.append(x_i)
-            y.append(y_i)
-            z.append(z_i)
-            vx.append(vx_i)
-            vy.append(vy_i)
-            vz.append(vz_i)
-            jpos.append(np.sqrt(jpos_i))
-            jvel.append(jvel_i)
-            jtot.append((jpos_i * 1e7 * (jvel_i + 1) + 1))
-    return t, xstar, ystar, zstar, x, y, z, vx, vy, vz, jpos, jvel, jtot
+        if 'fig' in directory:
+            print("\t" + directory)
+            csvfile = directory + directory[len(parent_dir + 'fig_'):-1] + '.csv'
+            t_i, xstar_i, ystar_i, zstar_i, x_i, y_i, z_i, vx_i, vy_i, vz_i, jpos_i, jvel_i, jtot_i, stdx_i, stdy_i = extract_data(csvfile)
+            if not np.array(t_i == -np.inf).any():
+                t.append(t_i)
+                xstar.append(xstar_i)
+                ystar.append(ystar_i)
+                zstar.append(zstar_i)
+                x.append(x_i)
+                y.append(y_i)
+                z.append(z_i)
+                vx.append(vx_i)
+                vy.append(vy_i)
+                vz.append(vz_i)
+                jpos.append(np.sqrt(jpos_i))
+                jvel.append(jvel_i)
+                jtot.append((jpos_i * 1e7 * (jvel_i + 1) + 1))
+                stdx.append(stdx_i)
+                stdy.append(stdy_i)
+    return t, xstar, ystar, zstar, x, y, z, vx, vy, vz, jpos, jvel, jtot, stdx, stdy
 
 def get_data_depth_n(parent_dir, n):
     directories = get_dirs_depth_n(parent_dir, n)
@@ -134,26 +147,32 @@ def get_data_depth_n(parent_dir, n):
     jpos = []
     jvel = []
     jtot = []
+    stdx = []
+    stdy = []
     print("Extracting from...")
     for directory in directories:
-        print("\t" + directory)
-        csvfile = directory + directory[len('./mpcs/fig_'):-1] + '.csv'
-        t_i, xstar_i, ystar_i, zstar_i, x_i, y_i, z_i, vx_i, vy_i, vz_i, jpos_i, jvel_i, jtot_i = extract_data(csvfile)
-        if not np.array(t_i == -np.inf).any():
-            t.append(t_i)
-            xstar.append(xstar_i)
-            ystar.append(ystar_i)
-            zstar.append(zstar_i)
-            x.append(x_i)
-            y.append(y_i)
-            z.append(z_i)
-            vx.append(vx_i)
-            vy.append(vy_i)
-            vz.append(vz_i)
-            jpos.append(np.sqrt(jpos_i))
-            jvel.append(jvel_i)
-            jtot.append((jpos_i * 1e7 * (jvel_i + 1) + 1))
-    return t, xstar, ystar, zstar, x, y, z, vx, vy, vz, jpos, jvel, jtot
+        if 'fig' in directory:
+            print("\t" + directory)
+            csvfile = directory + directory[len(parent_dir + 'fig_'):-1] + '.csv'
+            # csvfile = directory + directory[len('./mpcs/fig_'):-1] + '.csv'
+            t_i, xstar_i, ystar_i, zstar_i, x_i, y_i, z_i, vx_i, vy_i, vz_i, jpos_i, jvel_i, jtot_i, stdx_i, stdy_i = extract_data(csvfile)
+            if not np.array(t_i == -np.inf).any():
+                t.append(t_i)
+                xstar.append(xstar_i)
+                ystar.append(ystar_i)
+                zstar.append(zstar_i)
+                x.append(x_i)
+                y.append(y_i)
+                z.append(z_i)
+                vx.append(vx_i)
+                vy.append(vy_i)
+                vz.append(vz_i)
+                jpos.append(np.sqrt(jpos_i))
+                jvel.append(jvel_i)
+                jtot.append((jpos_i * 1e7 * (jvel_i + 1) + 1))
+                stdx.append(stdx_i)
+                stdy.append(stdy_i)
+    return t, xstar, ystar, zstar, x, y, z, vx, vy, vz, jpos, jvel, jtot, stdx, stdy
 
 def get_mean_and_var(t, x, m):
     t = t[:m]
@@ -169,7 +188,7 @@ def get_mean_and_var(t, x, m):
     return ti, mu, sigma
 
 def plot_n_samples(ax_jpos, ax_jvel, ax_jtot, parent_dir, m, n, c):
-    t, xstar, ystar, zstar, x, y, z, vx, vy, vz, jpos, jvel, jtot = get_data_n_samples(parent_dir, n)
+    t, xstar, ystar, zstar, x, y, z, vx, vy, vz, jpos, jvel, jtot, stdx, stdy = get_data_n_samples(parent_dir, n)
     jpos_avg = []
     jvel_avg = []
     jtot_avg = []
@@ -206,7 +225,7 @@ def plot_n_samples(ax_jpos, ax_jvel, ax_jtot, parent_dir, m, n, c):
     return 1.0 * n_lost / m
 
 def plot_depth_n(ax_jpos, ax_jvel, ax_jtot, parent_dir, m, n, c):
-    t, xstar, ystar, zstar, x, y, z, vx, vy, vz, jpos, jvel, jtot = get_data_depth_n(parent_dir, n)
+    t, xstar, ystar, zstar, x, y, z, vx, vy, vz, jpos, jvel, jtot, stdx, stdy = get_data_depth_n(parent_dir, n)
     jpos_avg = []
     jvel_avg = []
     jtot_avg = []
@@ -221,20 +240,29 @@ def plot_depth_n(ax_jpos, ax_jvel, ax_jtot, parent_dir, m, n, c):
         else:
             n_lost += 1
     # print(str(n_lost) + " for " + str(n) + "-sample system")
+    t_jpos, mu_jpos, sigma_jpos = get_mean_and_var(t_avg, jpos_avg, m)
+    t_jvel, mu_jvel, sigma_jvel = get_mean_and_var(t_avg, jvel_avg, m)
+    t_jtot, mu_jtot, sigma_jtot = get_mean_and_var(t_avg, jtot_avg, m)
     print("Plotting...")
     # for i in range(40):
-    ax_jpos.plot(t[0] / 3600.0, jpos_avg[0] / 1000.0, c=c)
-    ax_jvel.plot(t[0] / 3600.0, jvel_avg[0], c=c)
-    ax_jtot.plot(t[0] / 3600.0, jtot_avg[0] / 1e16, c=c)
+    ax_jpos.plot(t_jpos / 3600.0, mu_jpos / 1000.0, c=c)
+    ax_jpos.plot(t_jpos / 3600.0, (mu_jpos+2*sigma_jpos) / 1000.0, linestyle='dashed', c=c)
+    ax_jpos.plot(t_jpos / 3600.0, (mu_jpos-2*sigma_jpos) / 1000.0, linestyle='dashed', c=c)
+    ax_jvel.plot(t_jvel / 3600.0, mu_jvel, c=c)
+    ax_jvel.plot(t_jvel / 3600.0, mu_jvel+2*sigma_jvel, linestyle='dashed', c=c)
+    ax_jvel.plot(t_jvel / 3600.0, mu_jvel-2*sigma_jvel, linestyle='dashed', c=c)
+    ax_jtot.plot(t_jtot / 3600.0, mu_jtot / 1e16, c=c)
+    ax_jtot.plot(t_jtot / 3600.0, (mu_jtot+2*sigma_jtot) / 1e16, linestyle='dashed', c=c)
+    ax_jtot.plot(t_jtot / 3600.0, (mu_jtot-2*sigma_jtot) / 1e16, linestyle='dashed', c=c)
     # gray -= dgray
     ax_jpos.set_xlim([0,45])
-    ax_jpos.set_ylim([0,15])
-    ax_jvel.set_ylim([0.1,0.4])
-    ax_jtot.set_ylim([0,2])
+    ax_jpos.set_ylim([0,10])
+    ax_jvel.set_ylim([0.15,0.25])
+    ax_jtot.set_ylim([0,1])
     return 1.0 * n_lost / m
 
 def plot_depth_n_all(ax_jpos, ax_jvel, ax_jtot, parent_dir, m, n, c):
-    t, xstar, ystar, zstar, x, y, z, vx, vy, vz, jpos, jvel, jtot = get_data_depth_n(parent_dir, n)
+    t, xstar, ystar, zstar, x, y, z, vx, vy, vz, jpos, jvel, jtot, stdx, stdy = get_data_depth_n(parent_dir, n)
     jpos_avg = []
     jvel_avg = []
     jtot_avg = []
@@ -242,67 +270,149 @@ def plot_depth_n_all(ax_jpos, ax_jvel, ax_jtot, parent_dir, m, n, c):
     n_lost = 0
     print("Plotting...")
     # for i in range(40):
-    ax_jpos.plot(t[0] / 3600.0, jpos[0] / 1000.0, c=c)
-    ax_jvel.plot(t[0] / 3600.0, jvel[0], c=c)
-    ax_jtot.plot(t[0] / 3600.0, jtot[0] / 1e16, c=c)
+    ax_std = ax_jpos.twinx()
+    for i in range(len(jpos)):
+        stdx_i = np.sqrt(np.cumsum(stdx[i]**2 * 5))
+        stdy_i = np.sqrt(np.cumsum(stdy[i]**2 * 5))
+        ax_jpos.plot(t[i] / 3600.0, jpos[i] / 1000.0, c=c)
+        ax_jvel.plot(t[i] / 3600.0, jvel[i], c=c)
+        ax_jtot.plot(t[i] / 3600.0, jtot[i] / 1e16, c=c)
+        ax_std.plot(t[i] / 3600.0, stdx_i, c=c, linestyle='dashed')
+        ax_std.plot(t[i] / 3600.0, stdy_i, c=c, linestyle='dotted')
     # gray -= dgray
     ax_jpos.set_xlim([0,45])
     ax_jpos.set_ylim([0,150])
     ax_jvel.set_ylim([0,2.1])
     ax_jtot.set_ylim([0,50])
+    ax_std.set_ylim([0,3000])
     return 1.0 * n_lost / m
 
-fig = plt.figure()
-parent_dir = "./naives/"
-gs = gridspec.GridSpec(3,2)
-# ax_lost = fig.add_subplot(gs[0,0])
-ax_jpos_2 = fig.add_subplot(gs[0,0])
-ax_jvel_2 = fig.add_subplot(gs[1,0], sharex=ax_jpos_2)
-ax_jtot_2 = fig.add_subplot(gs[2,0], sharex=ax_jpos_2)
-ax_jpos_all = fig.add_subplot(gs[0,1])
-ax_jvel_all = fig.add_subplot(gs[1,1], sharex=ax_jpos_all)
-ax_jtot_all = fig.add_subplot(gs[2,1], sharex=ax_jpos_all)
-# ax_jpos_3 = fig.add_subplot(gs[9:16,1], sharey=ax_jpos_2)
-# ax_jvel_3 = fig.add_subplot(gs[17:24,1], sharex=ax_jpos_3, sharey=ax_jvel_2)
-# ax_jtot_3 = fig.add_subplot(gs[25:,1], sharex=ax_jpos_3, sharey=ax_jtot_2)
-# ax_jpos_4 = fig.add_subplot(gs[9:16,2], sharey=ax_jpos_2)
-# ax_jvel_4 = fig.add_subplot(gs[17:24,2], sharex=ax_jpos_4, sharey=ax_jvel_2)
-# ax_jtot_4 = fig.add_subplot(gs[25:,2], sharex=ax_jpos_4, sharey=ax_jtot_2)
-# ax_jpos_5 = fig.add_subplot(gs[9:16,3], sharey=ax_jpos_2)
-# ax_jvel_5 = fig.add_subplot(gs[17:24,3], sharex=ax_jpos_5, sharey=ax_jvel_2)
-# ax_jtot_5 = fig.add_subplot(gs[25:,3], sharex=ax_jpos_5, sharey=ax_jtot_2)
-# lost_2 = plot_n_samples(ax_jpos_2, ax_jvel_2, ax_jtot_2, parent_dir, 70, 2, np.ones(3)*0.8)
-# lost_3 = plot_n_samples(ax_jpos_2, ax_jvel_2, ax_jtot_2, parent_dir, 70, 4, np.ones(3)*0.6)
-# lost_4 = plot_n_samples(ax_jpos_2, ax_jvel_2, ax_jtot_2, parent_dir, 70, 6, np.ones(3)*0.4)
-# lost_5 = plot_n_samples(ax_jpos_2, ax_jvel_2, ax_jtot_2, parent_dir, 70, 8, np.ones(3)*0.2)
-parent_dir = "./mpcs/"
-plot_depth_n(ax_jpos_2, ax_jvel_2, ax_jtot_2, parent_dir, 1, 1, np.ones(3)*0.8)
-plot_depth_n(ax_jpos_2, ax_jvel_2, ax_jtot_2, parent_dir, 1, 2, np.ones(3)*0.6)
-plot_depth_n(ax_jpos_2, ax_jvel_2, ax_jtot_2, parent_dir, 1, 3, np.ones(3)*0.4)
-plot_depth_n(ax_jpos_2, ax_jvel_2, ax_jtot_2, parent_dir, 1, 4, np.ones(3)*0.2)
-plot_depth_n_all(ax_jpos_all, ax_jvel_all, ax_jtot_all, parent_dir, 1, 1, np.ones(3)*0.8)
-plot_depth_n_all(ax_jpos_all, ax_jvel_all, ax_jtot_all, parent_dir, 1, 2, np.ones(3)*0.6)
-plot_depth_n_all(ax_jpos_all, ax_jvel_all, ax_jtot_all, parent_dir, 1, 3, np.ones(3)*0.4)
-plot_depth_n_all(ax_jpos_all, ax_jvel_all, ax_jtot_all, parent_dir, 1, 4, np.ones(3)*0.2)
-# n_samples = np.array([2,4,6,8])
-# lost = np.array([lost_2, lost_3, lost_4, lost_5])
-# colors = np.array([np.ones(3)*0.8, np.ones(3)*0.6, np.ones(3)*0.4, np.ones(3)*0.2])
-# ax_lost.bar(n_samples, lost, color=colors)
-# ax_lost.set_xticks(n_samples)
-# ax_lost.set_ylim([0,1])
-# ax_lost.set_xlabel("Number of Candidate Altitudes")
-ax_jtot_2.set_xlabel("Simulation Time [hr]")
-# ax_lost.set_ylabel("Proportion of\nAgents Lost")
-ax_jpos_2.set_ylabel("Mean Distance\nfrom Set Point [km]")
-ax_jvel_2.set_ylabel("Mean Direction\nQuality")
-ax_jtot_2.set_ylabel("Planning Cost")
-ax_jpos_all.set_ylabel("Distance from\nSet Point [km]")
-ax_jvel_all.set_ylabel("Direction Quality")
-ax_jtot_all.set_ylabel("Planning Cost")
-ax_jtot_all.set_xlabel("Simulation Time [hr]")
-plt.setp(ax_jpos_2.get_xticklabels(), visible=False)
-plt.setp(ax_jvel_2.get_xticklabels(), visible=False)
-plt.setp(ax_jpos_all.get_xticklabels(), visible=False)
-plt.setp(ax_jvel_all.get_xticklabels(), visible=False)
-# plt.tight_layout()
-plt.show()
+def plot1():
+    fig = plt.figure()
+    parent_dir = "./naives/"
+    gs = gridspec.GridSpec(3,2)
+    # ax_lost = fig.add_subplot(gs[0,0])
+    ax_jpos_2 = fig.add_subplot(gs[0,0])
+    ax_jvel_2 = fig.add_subplot(gs[1,0], sharex=ax_jpos_2)
+    ax_jtot_2 = fig.add_subplot(gs[2,0], sharex=ax_jpos_2)
+    ax_jpos_all = fig.add_subplot(gs[0,1])
+    ax_jvel_all = fig.add_subplot(gs[1,1], sharex=ax_jpos_all)
+    ax_jtot_all = fig.add_subplot(gs[2,1], sharex=ax_jpos_all)
+    # ax_jpos_3 = fig.add_subplot(gs[9:16,1], sharey=ax_jpos_2)
+    # ax_jvel_3 = fig.add_subplot(gs[17:24,1], sharex=ax_jpos_3, sharey=ax_jvel_2)
+    # ax_jtot_3 = fig.add_subplot(gs[25:,1], sharex=ax_jpos_3, sharey=ax_jtot_2)
+    # ax_jpos_4 = fig.add_subplot(gs[9:16,2], sharey=ax_jpos_2)
+    # ax_jvel_4 = fig.add_subplot(gs[17:24,2], sharex=ax_jpos_4, sharey=ax_jvel_2)
+    # ax_jtot_4 = fig.add_subplot(gs[25:,2], sharex=ax_jpos_4, sharey=ax_jtot_2)
+    # ax_jpos_5 = fig.add_subplot(gs[9:16,3], sharey=ax_jpos_2)
+    # ax_jvel_5 = fig.add_subplot(gs[17:24,3], sharex=ax_jpos_5, sharey=ax_jvel_2)
+    # ax_jtot_5 = fig.add_subplot(gs[25:,3], sharex=ax_jpos_5, sharey=ax_jtot_2)
+    # lost_2 = plot_n_samples(ax_jpos_2, ax_jvel_2, ax_jtot_2, parent_dir, 70, 2, np.ones(3)*0.8)
+    # lost_3 = plot_n_samples(ax_jpos_2, ax_jvel_2, ax_jtot_2, parent_dir, 70, 4, np.ones(3)*0.6)
+    # lost_4 = plot_n_samples(ax_jpos_2, ax_jvel_2, ax_jtot_2, parent_dir, 70, 6, np.ones(3)*0.4)
+    # lost_5 = plot_n_samples(ax_jpos_2, ax_jvel_2, ax_jtot_2, parent_dir, 70, 8, np.ones(3)*0.2)
+    parent_dir = "./mpcs/"
+    plot_depth_n(ax_jpos_2, ax_jvel_2, ax_jtot_2, parent_dir, 1, 1, np.ones(3)*0.8)
+    plot_depth_n(ax_jpos_2, ax_jvel_2, ax_jtot_2, parent_dir, 1, 2, np.ones(3)*0.6)
+    plot_depth_n(ax_jpos_2, ax_jvel_2, ax_jtot_2, parent_dir, 1, 3, np.ones(3)*0.4)
+    plot_depth_n(ax_jpos_2, ax_jvel_2, ax_jtot_2, parent_dir, 1, 4, np.ones(3)*0.2)
+    plot_depth_n_all(ax_jpos_all, ax_jvel_all, ax_jtot_all, parent_dir, 1, 1, np.ones(3)*0.8)
+    plot_depth_n_all(ax_jpos_all, ax_jvel_all, ax_jtot_all, parent_dir, 1, 2, np.ones(3)*0.6)
+    plot_depth_n_all(ax_jpos_all, ax_jvel_all, ax_jtot_all, parent_dir, 1, 3, np.ones(3)*0.4)
+    plot_depth_n_all(ax_jpos_all, ax_jvel_all, ax_jtot_all, parent_dir, 1, 4, np.ones(3)*0.2)
+    # n_samples = np.array([2,4,6,8])
+    # lost = np.array([lost_2, lost_3, lost_4, lost_5])
+    # colors = np.array([np.ones(3)*0.8, np.ones(3)*0.6, np.ones(3)*0.4, np.ones(3)*0.2])
+    # ax_lost.bar(n_samples, lost, color=colors)
+    # ax_lost.set_xticks(n_samples)
+    # ax_lost.set_ylim([0,1])
+    # ax_lost.set_xlabel("Number of Candidate Altitudes")
+    ax_jtot_2.set_xlabel("Simulation Time [hr]")
+    # ax_lost.set_ylabel("Proportion of\nAgents Lost")
+    ax_jpos_2.set_ylabel("Mean Distance\nfrom Set Point [km]")
+    ax_jvel_2.set_ylabel("Mean Direction\nQuality")
+    ax_jtot_2.set_ylabel("Planning Cost")
+    ax_jpos_all.set_ylabel("Distance from\nSet Point [km]")
+    ax_jvel_all.set_ylabel("Direction Quality")
+    ax_jtot_all.set_ylabel("Planning Cost")
+    ax_jtot_all.set_xlabel("Simulation Time [hr]")
+    plt.setp(ax_jpos_2.get_xticklabels(), visible=False)
+    plt.setp(ax_jvel_2.get_xticklabels(), visible=False)
+    plt.setp(ax_jpos_all.get_xticklabels(), visible=False)
+    plt.setp(ax_jvel_all.get_xticklabels(), visible=False)
+    # plt.tight_layout()
+    plt.show()
+
+def plot2():
+    fig = plt.figure()
+    gs = gridspec.GridSpec(3,2)
+
+    ax_jpos_2 = fig.add_subplot(gs[0,0])
+    ax_jvel_2 = fig.add_subplot(gs[1,0], sharex=ax_jpos_2)
+    ax_jtot_2 = fig.add_subplot(gs[2,0], sharex=ax_jpos_2)
+
+    ax_jpos_all = fig.add_subplot(gs[0,1])
+    ax_jvel_all = fig.add_subplot(gs[1,1], sharex=ax_jpos_all)
+    ax_jtot_all = fig.add_subplot(gs[2,1], sharex=ax_jpos_all)
+
+    parent_dir = "./quadcosts/y/"
+    plot_depth_n(ax_jpos_2, ax_jvel_2, ax_jtot_2, parent_dir, 4, 4, np.ones(3)*0.8)
+    plot_depth_n_all(ax_jpos_all, ax_jvel_all, ax_jtot_all, parent_dir, 4, 4, np.ones(3)*0.8)
+    parent_dir = "./quadcosts/n/"
+    plot_depth_n(ax_jpos_2, ax_jvel_2, ax_jtot_2, parent_dir, 4, 4, np.ones(3)*0.2)
+    plot_depth_n_all(ax_jpos_all, ax_jvel_all, ax_jtot_all, parent_dir, 4, 4, np.ones(3)*0.2)
+
+
+    ax_jtot_2.set_xlabel("Simulation Time [hr]")
+    ax_jpos_2.set_ylabel("Mean Distance\nfrom Set Point [km]")
+    ax_jvel_2.set_ylabel("Mean Direction\nQuality")
+    ax_jtot_2.set_ylabel("Planning Cost")
+    ax_jpos_all.set_ylabel("Distance from\nSet Point [km]")
+    ax_jvel_all.set_ylabel("Direction Quality")
+    ax_jtot_all.set_ylabel("Planning Cost")
+    ax_jtot_all.set_xlabel("Simulation Time [hr]")
+    plt.setp(ax_jpos_2.get_xticklabels(), visible=False)
+    plt.setp(ax_jvel_2.get_xticklabels(), visible=False)
+    plt.setp(ax_jpos_all.get_xticklabels(), visible=False)
+    plt.setp(ax_jvel_all.get_xticklabels(), visible=False)
+    plt.show()
+
+def plot3():
+    fig = plt.figure()
+    gs = gridspec.GridSpec(3,2)
+
+    ax_jpos_2 = fig.add_subplot(gs[0,0])
+    ax_jvel_2 = fig.add_subplot(gs[1,0], sharex=ax_jpos_2)
+    ax_jtot_2 = fig.add_subplot(gs[2,0], sharex=ax_jpos_2)
+
+    ax_jpos_all = fig.add_subplot(gs[0,1])
+    ax_jvel_all = fig.add_subplot(gs[1,1], sharex=ax_jpos_all)
+    ax_jtot_all = fig.add_subplot(gs[2,1], sharex=ax_jpos_all)
+
+    m = 3
+    parent_dir = "./quadcosts/sampling_scenarios/w-sampling/05-min/"
+    plot_depth_n(ax_jpos_2, ax_jvel_2, ax_jtot_2, parent_dir, m, 4, np.ones(3)*0.8)
+    plot_depth_n_all(ax_jpos_all, ax_jvel_all, ax_jtot_all, parent_dir, m, 4, np.ones(3)*0.8)
+    parent_dir = "./quadcosts/sampling_scenarios/w-sampling/10-min/"
+    plot_depth_n(ax_jpos_2, ax_jvel_2, ax_jtot_2, parent_dir, m, 4, np.ones(3)*0.5)
+    plot_depth_n_all(ax_jpos_all, ax_jvel_all, ax_jtot_all, parent_dir, m, 4, np.ones(3)*0.5)
+    parent_dir = "./quadcosts/sampling_scenarios/w-sampling/20-min/"
+    plot_depth_n(ax_jpos_2, ax_jvel_2, ax_jtot_2, parent_dir, m, 4, np.ones(3)*0.2)
+    plot_depth_n_all(ax_jpos_all, ax_jvel_all, ax_jtot_all, parent_dir, m, 4, np.ones(3)*0.2)
+
+
+    ax_jtot_2.set_xlabel("Simulation Time [hr]")
+    ax_jpos_2.set_ylabel("Mean Distance\nfrom Set Point [km]")
+    ax_jvel_2.set_ylabel("Mean Direction\nQuality")
+    ax_jtot_2.set_ylabel("Planning Cost")
+    ax_jpos_all.set_ylabel("Distance from\nSet Point [km]")
+    ax_jvel_all.set_ylabel("Direction Quality")
+    ax_jtot_all.set_ylabel("Planning Cost")
+    ax_jtot_all.set_xlabel("Simulation Time [hr]")
+    plt.setp(ax_jpos_2.get_xticklabels(), visible=False)
+    plt.setp(ax_jvel_2.get_xticklabels(), visible=False)
+    plt.setp(ax_jpos_all.get_xticklabels(), visible=False)
+    plt.setp(ax_jvel_all.get_xticklabels(), visible=False)
+    plt.show()
+
+plot3()
