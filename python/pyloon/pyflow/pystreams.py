@@ -20,6 +20,10 @@ class JetStream:
         self.max_alt = parsekw(kwargs, 'max_alt', 0)
         self.magnitude = parsekw(kwargs, 'magnitude', 0)
         self.direction = parsekw(kwargs, 'direction', 0)
+        vx = self.magnitude * np.cos(direction)
+        vy = self.magnitude * np.sin(direction)
+        v = np.array([vx, vy])
+        self.v = v
 
     def set_id(self, id):
         self.id = id

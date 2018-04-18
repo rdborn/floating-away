@@ -46,16 +46,15 @@ LoonSim
     delta_p_expectation
     delta_std_expectation
     lowest_J_yet
-    *sequences
     backedges
     leaves
     curr_key
     nodes_expanded
-    *streamres
-    *streammax
-    *streammin
-    *threshold
-    *streamsize
+    streamres
+    streammax
+    streammin
+    threshold
+    streamsize
     lower
     upper
     sampled_ponts
@@ -93,9 +92,6 @@ LoonSim
     __accel__()                         //* Calculate acceleration towards origin in particular jetstream
     __accel_cost__()                    //* Calculate acceleration cost term (norm of acceleration)
     __best_pol__()                      // Find lowest cost policy (does not find associated costs)
-    __cost__()                          //** Calculates distance from origin
-    __cost_of_jetstream__()             //* Calculates velocity cost of a particular jetstream
-    __cost_of_vel__()                   // Calculates velocity cost
     __cost_to_altitude__()              // Calculates change in position from current altitude to another altitude
     __delta_p_between_jetstreams__()    // Calculates change in position between each jetstream pair
     __desired_dir__()                   //* Calculates direction to origin
@@ -104,9 +100,6 @@ LoonSim
     __find_best_jetstream__()           // Finds lowest cost jetstream to travel to (no use of tabulated values)
     __get_stay_branch_length__()        // Calculates how long to stay put (for planning purposes)
     __incorporate_samples__()           // Add the data we've sampled to our estimators
-    __J_pos__()                         // Calculates distance to origin
-    __J_sample__()                      // Calculates reward for number of potential sample points along a branch
-    __J_vel__()                         // Calculates velocity cost
     __parse_field__()                   // Extracts data from Field object
     __local_max_idx__()                 // Finds local maxima in
     __min_climb__()                     //* Finds closest of several equally desirable jetstreams
@@ -115,7 +108,6 @@ LoonSim
     __moving_towards_target__()         // Finds whether we are (generally) moving towards the origin
     __phiddot__()                       // Finds acceleration towards origin
     __pol__()                           // Finds policy associated with a particular leaf
-    __range_J__()                       // Finds mean and standard deviation of a function given the distribution of its input
     __reset__()                         //* Make yourself ready for a new plan (move into Monte Carlo at least)
     __redo_jetstreams__()               // Rerun the jetstream identifier
     __redo_jetstreams_etc__()           // Redo jetstreams and re-calculate changes in position between them

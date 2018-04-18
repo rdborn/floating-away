@@ -11,6 +11,10 @@ from pyutils.pyutils import parsekw, hash3d, hash4d, rng, downsize
 from pyutils import pyutils
 from pyflow.pystreams import VarThresholdIdentifier2 as JSI
 from optiloon.fieldestimator import GPFE, KNN1DGP, Multi1DGP
+from optiloon.pycosts import J_position as Jp
+from optiloon.pycosts import J_velocity as Jv
+from optiloon.pycosts import J_acceleration as Ja
+from optiloon.pycosts import range_J
 
 class NaivePlanner:
     def __init__(self, *args, **kwargs):
@@ -56,51 +60,15 @@ class NaivePlanner:
         best_alt = 0
         for i, d in enumerate(self.data):
             alt = d[0]
-            v = d[1:]
-            J_pos = np.sqrt((np.sum((curr_pos[0:2] - pstar[0:2])**2)))
-            J_vel = self.__cost_of_vel__(curr_pos, pstar, v)
+            p = curr_pos[0:2]
+            pdot = d[1:]
+            J_pos = Jp(p=p, pstar=pstar[0:2])
+            J_vel = Jv(p=p, pstar=pstar[0:2], pdot=pdot)
             J = np.log(J_pos * (J_vel * gamma + 1) + 1)
             if J < min_J:
                 min_J = J
                 best_alt = alt
         return np.array([best_alt])
-
-    # DEPRECATED
-    def __cost_of_vel__(self, pos, pstar, vel):
-        """
-        Calculate the terminal cost of the given jetstream at the given position
-        for the given set point.
-
-        parameter pos position at which to calculate cost of jetstream
-        parameter pstar set point/goal position
-        parameter jet jetstream for which to calculate cost
-        return terminal cost of jet at pos for pstar
-        """
-
-        # SETTING UP/INITIALIZATION
-        # Get the balloon's current position and store its lateral and vertical
-        # positions separately
-        p = pos
-        # Calculate the components of the wind velocity and store it as the
-        # time derivative of the balloon's position
-        vx = vel[0]
-        vy = vel[1]
-        pdot = np.squeeze(np.array([vx, vy]).T)
-        pdothat = pdot / np.linalg.norm(pdot)
-        # Calculate the unit vector along the balloon's lateral position vector
-        norm_p = np.linalg.norm(p)
-        # phat = p / norm_p if norm_p > 0 else p
-        # Get the lateral position of the goal point
-        pstar = pstar[0:2]
-        # Translate the coordinate system such that pstar is at the origin
-        phi = p - pstar
-        norm_phi = np.linalg.norm(phi)
-        phihat = phi / norm_phi if norm_phi > 0 else phi
-        # CALCULATE COST:
-        J_velocity = (np.dot(phihat, pdothat)+1)
-
-        # Return the calculated cost
-        return J_velocity
 
 class LoonPathPlanner:
     def __init__(self, *args, **kwargs):
@@ -238,48 +206,6 @@ class LoonPathPlanner:
         mean_fy = self.vy_estimator.predict(p=p_pred, return_std=False)
         return mean_fx, mean_fy
 
-    """ NOT SUPPORTED """
-    # DEPRECATED
-    def __cost__(self, p, pstar):
-        """
-        Evaluate the cost function at the provided point for the provided goal.
-
-        parameter p 3D point at which to evaluate cost function.
-        parameter pstar 3D point representing the goal location.
-        return cost function evaluated at p for goal pstar.
-        """
-
-        return np.linalg.norm(np.subtract(p[0:2],pstar[0:2]))
-
-    """ HASN'T BEEN USED FOR A WHILE """
-    def __reset__(self):
-        """
-        Clears all sets associated with the Monte Carlo tree search.
-
-        return success/failure
-        """
-        self.nodes = dict()
-        self.edges = dict()
-        self.backedges = dict()
-        self.values = dict()
-        self.leaves = np.array([[np.inf, np.inf, np.inf, np.inf]])
-        return True
-
-    """ NOT SUPPORTED """
-    # DEPRECATED
-    def __drag_force__(self, loon, v):
-        """
-        NOT SUPPORTED
-        Calculate drag force for a given balloon and wind velocity.
-
-        parameter loon balloon object for which to calculate drag force.
-        parameter v wind speed for which to calculate drag force.
-        return drag force for loon in wind of speed v.
-        """
-        # TODO: change to wind-relative velocity
-        rho = 0.25 # air density
-        return v * abs(v) * rho * loon.A * loon.Cd / 2
-
 """ HASN'T BEEN USED FOR A WHILE """
 class MonteCarloPlanner(LoonPathPlanner):
     def __init__(self, *args, **kwargs):
@@ -301,6 +227,20 @@ class MonteCarloPlanner(LoonPathPlanner):
                                     field=kwargs.get('field'),
                                     lower=kwargs.get('lower'),
                                     upper=kwargs.get('upper'))
+
+    """ HASN'T BEEN USED FOR A WHILE """
+    def __reset__(self):
+        """
+        Clears all sets associated with the Monte Carlo tree search.
+
+        return success/failure
+        """
+        self.nodes = dict()
+        self.edges = dict()
+        self.backedges = dict()
+        self.values = dict()
+        self.leaves = np.array([[np.inf, np.inf, np.inf, np.inf]])
+        return True
 
     def plan(self, *args, **kwargs):
         """
@@ -575,25 +515,12 @@ class WindAwarePlanner(LoonPathPlanner):
         vy = np.zeros(self.streamres)
         stdx = np.zeros(self.streamres)
         stdy = np.zeros(self.streamres)
-        # streamdir = np.zeros(self.streamres)
-        # streammag = np.zeros(self.streamres)
-        # unbounded_angle = np.zeros(self.streamres)
         for i, z in enumerate(alt):
             vx_i, vy_i, std_x_i, std_y_i = self.predict(np.array([p[0], p[1], z]))
             vx[i] = vx_i
             vy[i] = vy_i
             stdx[i] = std_x_i
             stdy[i] = std_y_i
-            # magnitude = np.sqrt(vx**2 + vy**2)
-            # direction = np.arctan2(vy, vx)
-            # streammag[i] = magnitude
-            # streamdir[i] = direction
-            # vxmin, vxmax = pyutils.get_samesign_bounds(vx, std_x)
-            # vymin, vymax = pyutils.get_samesign_bounds(vy, std_y)
-            # unbounded_angle[i] = ((abs(vxmin) < 1e-6) or (abs(vxmax) < 1e-6)) and \
-            #                     ((abs(vymin) < 1e-6) or (abs(vymax) < 1e-6))
-        # data = np.array([streammag, streamdir, alt, unbounded_angle]).T
-        # self.jets = JSI(data=data, threshold=self.threshold, streamsize=self.streamsize)
         self.jets = JSI(vx=vx,
                         vy=vy,
                         stdx=stdx,
@@ -627,14 +554,7 @@ class WindAwarePlanner(LoonPathPlanner):
         self.__redo_jetstreams__(loon.get_pos())
         print(self.jets.jetstreams.values())
 
-        # vals = np.array(self.jets.jetstreams.values())
-        # z_test = vals[:,0]
-        # theta = np.arccos(vals[:,2])
-        # theta = self.__wind_dir__(z_test)
         phi = self.__desired_dir__(loon, pstar)
-        # candidates = np.cos(phi - theta)
-        # candidates = self.__smooth__(phi, theta)
-        # target = self.__min_climb__(loon, z_test, candidates)
         target, J = self.__find_best_jetstream__(loon, pstar, 5)
         print("Target altitude: " + str(target.avg_alt))
         print("Direction at target: " + str((target.direction * 180.0 / np.pi) % 360))
@@ -763,7 +683,7 @@ class WindAwarePlanner(LoonPathPlanner):
             # vertical distance to it (scaled)
             J_fuel_jetstreams[i] = dz*1e-3
             # Calculate the terminal cost of this jetstream
-            J_jetstreams[i] = self.__cost_of_jetstream__(new_pos, pstar, jet)
+            J_jetstreams[i] = Jv(p=new_pos[0:2], pstar=pstar, pdot=jet.v)
             # Calculate the total cost of choosing this jetstream as the sum
             # of the fuel cost and terminal cost
             J[i] = J_fuel_jetstreams[i] + J_jetstreams[i]
@@ -776,115 +696,6 @@ class WindAwarePlanner(LoonPathPlanner):
 
         # Return the jetstream with the smallest total cost and its cost
         return best_jet, best_J
-
-    # DEPRECATED
-    def __phiddot__(self, p, phat, pdot):
-        """
-        Calculate the acceleration towards the origin
-
-        parameter p position at which to perform calculation
-        parameter phat unit vector along p
-        parameter pdot velocity at which to perform calculation
-        return acceleration toward the origin
-        """
-
-        # TODO: Extend this to be acceleration towards a set point
-
-        p = np.array(p)
-        phat = np.array(phat)
-        pdot = np.array(pdot)
-        # Find velocity towards origin
-        phidot = np.dot(phat, pdot) * phat
-        # Find acceleration towards origin
-        norm_p = np.linalg.norm(p)
-        phiddot = (((np.linalg.norm(pdot)**2 - 2 * np.linalg.norm(phidot)**2)) * phat + np.linalg.norm(phidot) * pdot)
-        phiddot = phiddot / norm_p if norm_p > 0 else phiddot
-        # Return acceleration towards origin
-        return phiddot
-
-    # DEPRECATED
-    def __cost_of_jetstream__(self, pos, pstar, jet):
-        """
-        Calculate the terminal cost of the given jetstream at the given position
-        for the given set point.
-
-        parameter pos position at which to calculate cost of jetstream
-        parameter pstar set point/goal position
-        parameter jet jetstream for which to calculate cost
-        return terminal cost of jet at pos for pstar
-        """
-
-        # SETTING UP/INITIALIZATION
-        # Get the balloon's current position and store its lateral and vertical
-        # positions separately
-        # pos = np.array(loon.get_pos())
-        p = pos[0:2]
-        z_loon = pos[2]
-        pstar = pstar[0:2]
-        # Get the jetstream in question and store its magnitude and direction
-        # jet = self.jets.find(z_jet)
-        magnitude = jet.magnitude
-        direction = jet.direction
-        # Calculate the components of the wind velocity and store it as the
-        # time derivative of the balloon's position
-        vx = magnitude * np.cos(direction)
-        vy = magnitude * np.sin(direction)
-        pdot = np.squeeze(np.array([vx, vy]).T)
-        pdothat = pdot / np.linalg.norm(pdot)
-        # Calculate the unit vector along the balloon's lateral position vector
-        norm_p = np.linalg.norm(p)
-        # phat = p / norm_p if norm_p > 0 else p
-        # Get the lateral position of the goal point
-        pstar = pstar[0:2]
-        # Translate the coordinate system such that pstar is at the origin
-        phi = p - pstar
-        norm_phi = np.linalg.norm(phi)
-        phihat = phi / norm_phi if norm_phi > 0 else phi
-        # Calculate the acceleration of the balloon towards the origin
-        # phiddot = self.__phiddot__(p, phat, pdot)
-
-        # CALCULATE COST:
-        # Calculate the cost of this jetstream at this position with this goal
-        # position as...
-        # J_position = np.sqrt(np.dot(phi, phi))*1e-3*0
-        J_velocity = (np.dot(phihat, pdothat)+1)
-        # J_accel = np.dot(phiddot, phiddot)*0
-        # J = J_position + J_velocity + J_accel
-        J = J_velocity
-
-        # Return the calculated cost
-        return J
-
-    # DEPRECATED
-    def __accel_cost__(self, pos, pstar, jet):
-        # CALCULATE COST:
-        J_accel = np.linalg.norm(self.__accel__(pos, pstar, jet))
-        J = J_accel
-        # Return the calculated cost
-        return J
-
-    # DEPRECATED
-    def __accel__(self, pos, pstar, jet):
-        # SETTING UP/INITIALIZATION
-        # Get the balloon's current position and store its lateral and vertical
-        # positions separately
-        # pos = np.array(loon.get_pos())
-        p = pos[0:2]
-        # Get the jetstream in question and store its magnitude and direction
-        # jet = self.jets.find(z_jet)
-        magnitude = jet.magnitude
-        direction = jet.direction
-        # Calculate the components of the wind velocity and store it as the
-        # time derivative of the balloon's position
-        vx = magnitude * np.cos(direction)
-        vy = magnitude * np.sin(direction)
-        pdot = np.squeeze(np.array([vx, vy]).T)
-        # Calculate the unit vector along the balloon's lateral position vector
-        norm_p = np.linalg.norm(p)
-        phat = p / norm_p if norm_p > 0 else p
-        # Calculate the acceleration of the balloon towards the origin
-        phiddot = self.__phiddot__(p, phat, pdot)
-        return phiddot
 
     """ HASN'T BEEN USED FOR A WHILE """
     def __moving_towards_target__(self, pos, pstar, jet):
@@ -1132,12 +943,27 @@ class MPCWAPFast(WindAwarePlanner):
                 self.__redo_jetstreams_etc__(u, loon)
 
     def __reset_plan__(self):
-        self.sequences = dict()
         self.backedges = dict()
         self.curr_key = 0
         self.leaves = dict()
         self.lowest_J_yet = np.inf
         self.nodes_expanded = 0
+
+    def __preplan__(self, loon, u, radius):
+        if self.vx_estimator.changing_estimators(p=loon.get_pos(), radius=radius):
+            self.__incorporate_samples__(False, u, loon)
+            self.__redo_jetstreams_etc__(u, loon)
+            self.off_nominal
+        else:
+            self.__incorporate_samples__(True, u, loon)
+        print(self.jets)
+        self.__reset_plan__()
+
+    def __check_nominality__(self, threshold):
+        estimate_quality = self.jets.spanning_quality()
+        expected_quality = self.jets_expectation.spanning_quality()
+        delta_quality = estimate_quality - expected_quality
+        self.off_nominal = delta_quality > threshold
 
     def plan(self, *args, **kwargs):
         loon = parsekw(kwargs, 'loon', None)
@@ -1148,31 +974,11 @@ class MPCWAPFast(WindAwarePlanner):
         gamma = parsekw(kwargs, 'gamma', 1e7)
 
         radius = 40000
-        if self.vx_estimator.changing_estimators(p=loon.get_pos(), radius=radius):
-            self.__incorporate_samples__(False, u, loon)
-            self.__redo_jetstreams_etc__(u, loon)
-            self.off_nominal
-        else:
-            self.__incorporate_samples__(True, u, loon)
-        print(self.jets)
-        self.__reset_plan__()
-        pos = loon.get_pos()
-        estimate_quality = self.jets.spanning_quality()
-        expected_quality = self.jets_expectation.spanning_quality()
-        delta_quality = estimate_quality - expected_quality
-        print(estimate_quality)
-        print(expected_quality)
         delta_quality_threshold = 0.1
-        self.off_nominal = delta_quality > delta_quality_threshold
-        # self.__tree_search__(pos, 1, u, T, pstar, depth, 0.0, np.array([]), gamma)
-        self.__tree_search_w_std__(pos, 1, u, T, pstar, depth, 0.0, np.array([]), gamma)
-        best_leaf = self.__min_leaf__()
-        print(best_leaf)
-        best_pol, best_J = self.__pol__(leaf=best_leaf)
-        # best_pol = self.sequences[min_J]
-        print("\t\tNodes expanded: " + str(self.nodes_expanded))
-        if self.off_nominal:
-            return self.__sample_destination__(self.jets_expectation.find(best_pol[1]))
+        self.__preplan__(loon, u, radius)
+        self.__check_nominality__(delta_quality_threshold)
+        self.__tree_search_w_std__(loon.get_pos(), 1, u, T, pstar, depth, 0.0, np.array([]), gamma)
+        best_pol, best_J = self.__best_pol__()
         return best_pol
 
     def __sample_destination__(self, jet):
@@ -1243,6 +1049,7 @@ class MPCWAPFast(WindAwarePlanner):
             print(buf)
         return jet_id
 
+    # DEPRECATED
     def __tree_search__(self, pos, prev_key, u, T, pstar, depth, J, policy, gamma):
         self.curr_key += 1
         this_key = self.curr_key
@@ -1287,6 +1094,24 @@ class MPCWAPFast(WindAwarePlanner):
                 policy_i = np.append(np.array(policy), np.array(target_alt))
                 self.__tree_search__(new_pos, this_key, u, T, pstar, depth-1, J_i, policy_i, gamma)
 
+    def __dp__(self, id, jet):
+        if jet.id == id:
+            dp, dp_std = self.__get_stay_branch_length__(pos, pstar, jet, T, id)
+        else:
+            if self.off_nominal:
+                dp = self.delta_p_expectation[jet.id,j]
+                dp_std = self.delta_std_expectation[jet.id,j]
+            else:
+                dp = self.delta_p[jet.id,j]
+                dp_std = self.delta_std[jet.id,j]
+        return dp, dp_std
+
+    def __terminate_branch__(self, key, val):
+        self.leaves[this_key] = val
+        J = val[2]
+        if J < self.lowest_J_yet:
+            self.lowest_J_yet = J
+
     def __tree_search_w_std__(self, pos, prev_key, u, T, pstar, depth, J, policy, gamma):
         self.curr_key += 1
         this_key = self.curr_key
@@ -1297,101 +1122,46 @@ class MPCWAPFast(WindAwarePlanner):
         self.nodes_expanded += 1
 
         if depth == 0:
-            self.leaves[this_key] = val
-            if J < self.lowest_J_yet:
-                self.lowest_J_yet = J
-            if J in self.sequences.keys():
-                print("AHH")
-            self.sequences[J] = policy
+            self.__terminate_branch__(this_key, val)
             return
-
-        # HACK:
 
         if self.off_nominal:
             # print("Off nominal")
-            this_jet = self.jets_expectation.find(pos[2])
-            j = this_jet.id
-            j = self.__hacky_way_to_avoid_bug_when_not_in_jetstream__(pos, j)
-            jets = self.jets_expectation.jetstreams.values()
+            jets = self.jets_expectation
         else:
-            this_jet = self.jets.find(pos[2])
-            j = this_jet.id
-            j = self.__hacky_way_to_avoid_bug_when_not_in_jetstream__(pos, j)
-            jets = self.jets.jetstreams.values()
-        for i, jet in enumerate(jets):
+            jets = self.jets
+        this_jet = jets.find(pos[2])
+        id = this_jet.id
+        id = self.__hacky_way_to_avoid_bug_when_not_in_jetstream__(pos, id)
+        for i, jet in enumerate(jets.jetstreams.values()):
             if jet.avg_alt > self.lower and jet.avg_alt < self.upper:
                 target_alt = jet.avg_alt
-                if jet.id == j:
-                    dp, dp_std = self.__get_stay_branch_length__(pos, pstar, jet, T, j)
-                    J_fuel = 0.0
-                else:
-                    if self.off_nominal:
-                        dp = self.delta_p_expectation[jet.id,j]
-                        dp_std = self.delta_std_expectation[jet.id,j]
-                    else:
-                        dp = self.delta_p[jet.id,j]
-                        dp_std = self.delta_std[jet.id,j]
-                    J_fuel = (target_alt - pos[2])**2
+                dp, dp_std = self.__dp__(id, jet)
                 new_pos = np.append(pos[0:2] + dp, target_alt)
-                J_pos, J_pos_std = self.__range_J__(self.__J_pos__, pos=new_pos, std=dp_std, pstar=pstar, jet=jet)
-                J_vel, J_vel_std = self.__range_J__(self.__J_vel__, pos=new_pos, std=dp_std, pstar=pstar, jet=jet)
                 gamma = gamma * np.ones(6) if len(gamma) == 1 else gamma
-                J_sample = 0.0 if gamma[-1] == 0 else self.__J_sample__(self, pos, new_pos, pstar, target_alt)
-                # print("pos: " + str(J_pos) + "\tvel: " + str(J_vel) + "\tstd: " + str(J_pos_std))
+
+                if gamma[2] == 0:
+                    J_pos = Jp(p=new_pos, pstar=pstar)
+                    J_pos_std = 0.
+                else:
+                    J_pos, J_pos_std = range_J(Jp, p=new_pos, pstd=dp_std, pstar=pstar)
+
+                if gamma[3] == 0:
+                    J_vel = Jv(p=new_pos, pdot=jet.v, pstar=pstar)
+                    J_vel_std = 0.
+                else:
+                    J_vel, J_vel_std = range_J(Jv, p=new_pos, pdot=jet.v, pstd=dp_std, pstar=pstar)
+
+                if gamma[5] == 0:
+                    J_sample = 0.
+                else:
+                    J_sample = self.__J_sample__(self, pos, new_pos, pstar, target_alt)
+
                 J_i = np.dot(np.array([J_pos, J_vel, J_pos_std**2, J_vel_std**2, J_fuel, J_sample]), gamma) + J
                 if J_i > self.lowest_J_yet:
                     return
                 policy_i = np.append(np.array(policy), np.array(target_alt))
                 self.__tree_search_w_std__(new_pos, this_key, u, T, pstar, depth-1, J_i, policy_i, gamma)
-
-    # DEPRECATED
-    def __J_pos__(self, *args, **kwargs):
-        pos = parsekw(kwargs, 'pos', np.inf*np.ones(3))
-        pstar = parsekw(kwargs, 'pstar', np.inf*np.ones(3))
-        if (pos == np.inf).any():
-            print("No point specified, can't calculate cost")
-            return False
-        if (pstar == np.inf).any():
-            print("No goal specified, can't calculate cost")
-            return False
-        return np.sqrt(np.sum((pos[0:2] - pstar[0:2])**2))
-
-    # DEPRECATED
-    def __J_vel__(self, *args, **kwargs):
-        pos = parsekw(kwargs, 'pos', np.inf*np.ones(3))
-        if len(pos) == 2:
-            pos = np.append(pos, 0)
-        pstar = parsekw(kwargs, 'pstar', np.inf*np.ones(3))
-        jet = parsekw(kwargs, 'jet', False)
-        if (pos == np.inf).any():
-            print("No point specified, can't calculate cost")
-            return False
-        if (pstar == np.inf).any():
-            print("No goal specified, can't calculate cost")
-            return False
-        return WindAwarePlanner.__cost_of_jetstream__(self, pos, pstar, jet)
-
-    # DEPRECATED
-    def __range_J__(self, cost_function, *args, **kwargs):
-        pos = parsekw(kwargs, 'pos', np.inf*np.ones(3))
-        std = parsekw(kwargs, 'std', np.inf*np.ones(3))
-        pos = pos[0:2]
-        std = std[0:2]
-        J = np.zeros(5)
-        p = np.zeros([5,len(pos)])
-        for i in range(len(p)):
-            p[i] = np.random.normal(pos, std)
-        # p[0] = pos
-        # p[1] = pos+std
-        # p[2] = pos-std
-        # p[3] = pos+np.dot(std,np.array([1,-1]))
-        # p[4] = pos-np.dot(std,np.array([1,-1]))
-        for i in range(len(p)):
-            kwargs['pos'] = p[i]
-            J[i] = cost_function(**kwargs)
-        J_std = np.std(J)
-        J_mu = J[0]
-        return J_mu, J_std
 
     def __find_altitudes_for_sampling__(self, N, threshold):
         x_test = np.zeros(N)
@@ -1493,15 +1263,11 @@ class MPCWAPFast(WindAwarePlanner):
 
     def __best_pol__(self, *args, **kwargs):
         min_leaf = self.__min_leaf__()
-        best_pol = []
-        stem = self.backedges[best_leaf][0]
-        while True:
-            pos = self.backedges[stem][1]
-            best_pol = np.append(pos, best_pol)
-            if self.backedges[stem][0] == stem:
-                break
-            stem = self.backedges[stem][0]
-        return best_pol
+        best_pol, best_J = __pol__(leaf=min_leaf)
+        if self.off_nominal:
+            best_pol = self.__sample_destination__(self.jets_expectation.find(best_pol[1]))
+            best_J = 0.
+        return best_pol, best_J
 
     def __pol__(self, *args, **kwargs):
         leaf = parsekw(kwargs, 'leaf', None)
@@ -1548,42 +1314,6 @@ class MPCWAPFast(WindAwarePlanner):
         plt.setp(ax.get_xticklabels(), visible=False)
         ax.set_xlim([0, ax.get_xlim()[1]])
         # ax.set_xlim([3*1e18, 4*1e18])
-
-    # DEPRECATED
-    def __cost_of_vel__(self, pos, pstar, vel):
-        """
-        Calculate the terminal cost of the given jetstream at the given position
-        for the given set point.
-
-        parameter pos position at which to calculate cost of jetstream
-        parameter pstar set point/goal position
-        parameter jet jetstream for which to calculate cost
-        return terminal cost of jet at pos for pstar
-        """
-
-        # SETTING UP/INITIALIZATION
-        # Get the balloon's current position and store its lateral and vertical
-        # positions separately
-        p = pos
-        # Calculate the components of the wind velocity and store it as the
-        # time derivative of the balloon's position
-        vx = vel[0]
-        vy = vel[1]
-        pdot = np.squeeze(np.array([vx, vy]).T)
-        pdothat = pdot / np.linalg.norm(pdot)
-        # Calculate the unit vector along the balloon's lateral position vector
-        norm_p = np.linalg.norm(p)
-        # phat = p / norm_p if norm_p > 0 else p
-        # Get the lateral position of the goal point
-        pstar = pstar[0:2]
-        # Translate the coordinate system such that pstar is at the origin
-        phi = p - pstar
-        norm_phi = np.linalg.norm(phi)
-        phihat = phi / norm_phi if norm_phi > 0 else phi
-        # CALCULATE COST:
-        J_velocity = (np.dot(phihat, pdothat)+1)
-        # Return the calculated cost
-        return J_velocity
 
 """ HASN'T BEEN USED IN A WHILE """
 class LocalDynamicProgrammingPlanner(WindAwarePlanner):
