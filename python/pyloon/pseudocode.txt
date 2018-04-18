@@ -1,0 +1,141 @@
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+SIMULATION STRUCTURE
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+LoonSim
+  Environment (NOAA Field)
+    Field
+      origin
+      lat_span_m
+      lon_span_m
+      hrs_ahead
+      min_lat
+      max_lat
+      min_lon
+      max_lon
+      data
+      field
+      coords
+      model_vnorth
+      model_veast
+      pmin
+      pmax
+
+      __init__()
+      __str__()
+      __find__()
+      __check_validity__()
+
+      get_flow()
+      set_flow()
+
+    __init__()
+
+    get_flow()
+
+  PathPlanner (MPC Fast)
+    off_nominal
+    vx_estimator
+    vy_estimator
+    jets
+    delta_p
+    delta_std
+    jets_expectation
+    delta_p_expectation
+    delta_std_expectation
+    lowest_J_yet
+    *sequences
+    backedges
+    leaves
+    curr_key
+    nodes_expanded
+    *streamres
+    *streammax
+    *streammin
+    *threshold
+    *streamsize
+    lower
+    upper
+    sampled_ponts
+    alts_to_sample
+    FieldEstimator (1D GPFE)
+      estimators
+      prediction_key
+      X
+      y
+      recently_sampled_X
+      recently_sampled_y
+      expiring_X
+      expiring_y
+
+      __init__()
+      __reset__()
+      __build_data__()
+      __restrict__()
+      __partition__()
+
+      fit()
+      predict()
+      changing_estimators()
+      add_data()
+
+    add_sample()    // Stage sampled data for adding to estimators
+    train()         // Train estimators for the first time
+    retrain()       // Retrain estimators
+    predict()       // Return prediction with standard deviation
+    ev()            //** Return prediction without standard deviation
+    plan()          // Plan wrapper
+    plot()          // Plotting code
+
+    __init__()                          //* Initialization
+    __accel__()                         //* Calculate acceleration towards origin in particular jetstream
+    __accel_cost__()                    //* Calculate acceleration cost term (norm of acceleration)
+    __best_pol__()                      // Find lowest cost policy (does not find associated costs)
+    __cost__()                          //** Calculates distance from origin
+    __cost_of_jetstream__()             //* Calculates velocity cost of a particular jetstream
+    __cost_of_vel__()                   // Calculates velocity cost
+    __cost_to_altitude__()              // Calculates change in position from current altitude to another altitude
+    __delta_p_between_jetstreams__()    // Calculates change in position between each jetstream pair
+    __desired_dir__()                   //* Calculates direction to origin
+    __drag_force__()                    //** Calculates quadratic drag force
+    __find_altitudes_for_sampling__()   //* Finds places that would be useful to sample
+    __find_best_jetstream__()           // Finds lowest cost jetstream to travel to (no use of tabulated values)
+    __get_stay_branch_length__()        // Calculates how long to stay put (for planning purposes)
+    __incorporate_samples__()           // Add the data we've sampled to our estimators
+    __J_pos__()                         // Calculates distance to origin
+    __J_sample__()                      // Calculates reward for number of potential sample points along a branch
+    __J_vel__()                         // Calculates velocity cost
+    __parse_field__()                   // Extracts data from Field object
+    __local_max_idx__()                 // Finds local maxima in
+    __min_climb__()                     //* Finds closest of several equally desirable jetstreams
+    __min_leaf__()                      // Finds leaf on minimum cost branch
+    __min_leaf_J__()                    // Finds cost of minimum cost branch
+    __moving_towards_target__()         // Finds whether we are (generally) moving towards the origin
+    __phiddot__()                       // Finds acceleration towards origin
+    __pol__()                           // Finds policy associated with a particular leaf
+    __range_J__()                       // Finds mean and standard deviation of a function given the distribution of its input
+    __reset__()                         //* Make yourself ready for a new plan (move into Monte Carlo at least)
+    __redo_jetstreams__()               // Rerun the jetstream identifier
+    __redo_jetstreams_etc__()           // Redo jetstreams and re-calculate changes in position between them
+    __reset_plan__()                    // Make yourself ready for a new plan
+    __sample_destination__()            // Find best spot in target region to sample
+    __smooth__()                        //* Smooths noisy data
+    __tree_search__()                   //** Deprecated tree search
+    __tree_search_w_std__()             // Tree search
+    __wind_dir__()                      //* Finds direction of wind at a certain altitude
+    __hacky_way_to_avoid_bug_when_not_in_jetstream__()
+
+  Loon
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+MAIN FILE
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+main()
+local

@@ -1,6 +1,13 @@
 import numpy as np
 from scipy.stats import norm
 
+def bivar_normal_entropy(stdx, stdy):
+    # This is for a bivariate normal distribution with no covariance
+    return 0.5 * np.log((2 * np.pi * np.e)**2 * stdx * stdy)
+
+def multivar_normal_entropy(Sigma):
+    return 0.5 * np.log((2 * np.pi * np.e)**(Sigma.shape[0]) * np.linalg.det(Sigma))
+
 def get_samesign_bounds(x, stdx):
     if len(np.squeeze(np.array(x)).shape) == 0:
         xmax = np.sign(x) * np.max([np.sign(x) * (x + stdx), 0.0])
@@ -45,7 +52,36 @@ def get_angle_range(x, y, stdx, stdy):
     theta_upper = theta_upper if theta_upper > theta_nom else theta_upper + 360.0
     return theta_lower, theta_nom, theta_upper
 
+def get_angle_dist(x, y, stdx, stdy, n):
+    theta = np.zeros(n)
+    for i in range(len(theta)):
+        x_i = np.random.normal(x, stdx)
+        y_i = np.random.normal(y, stdy)
+        theta[i] = np.arctan2(y_i, x_i)
+    # theta = theta % (2 * np.pi)
+    # print(np.array(theta*180/np.pi,dtype=int))
+    theta_mu_1 = np.mean(theta)
+    theta_std_1 = np.std(theta)
+    # print(np.array([theta_mu, theta_std])*180/np.pi)
+    theta[theta>np.pi] -= 2*np.pi
+    # print(np.array(theta*180/np.pi,dtype=int))
+    theta_mu_2 = np.mean(theta)
+    theta_std_2 = np.std(theta)
+    # print(np.array([theta_mu, theta_std])*180/np.pi)
+    # if theta_std_1 < theta_std_2:
+        # return theta_mu_1, theta_std_1
+    # return theta_mu_2, theta_std_2
+    return theta_mu_1, theta_std_1
 
+def get_mag_dist(x, y, stdx, stdy, n):
+    mag = np.zeros(n)
+    for i in range(len(mag)):
+        x_i = np.random.normal(x, stdx)
+        y_i = np.random.normal(y, stdy)
+        mag[i] = np.sqrt(x_i**2 + y_i**2)
+    mag_mu = np.mean(mag)
+    mag_std = np.std(mag)
+    return mag_mu, mag_std
 
 def rad2deg(theta):
     return (theta * 180.0 / np.pi) % 360.0

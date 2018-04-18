@@ -1,6 +1,8 @@
 import os, sys, inspect
 sys.path.insert(1, os.path.join(sys.path[0],'..'))
 
+import matplotlib.pyplot as plt
+
 import numpy as np
 import copy
 from cvxopt import matrix, solvers
@@ -14,12 +16,12 @@ from cvxopt import matrix, solvers
 threshold = 1e-3
 alpha = 1e-3
 
-consider_std = True
+consider_std = False
 
 magnitude = np.array([11., 12., 26., 7., 25., 9.])
 direction = np.array([37., 49., 80., 270., 94., 102.]) * np.pi / 180.0
-vx = magnitude * np.cos(direction)
-vy = magnitude * np.sin(direction)
+vx = np.cos(direction)
+vy = np.sin(direction)
 stdx = np.array([0.1, 0.3, 0.1, 0.5, 0.02, 0.3])
 stdy = np.array([0.02, 0.3, 0.2, 0.1, 0.05, 0.2])
 # stdx = 0.005**2 * np.ones(len(vx))
@@ -31,7 +33,7 @@ else:
     sx = np.zeros(len(vx))
     sy = np.zeros(len(vy))
 A = np.matrix([vx, vy, sx, sy])
-b = np.matrix(1.)
+b = np.matrix(0.1)
 C = np.matrix(np.ones(A.shape[1]))
 p = np.matrix(np.eye(A.shape[1]))
 y = np.matrix([0.,0.,0.,0.]).T
@@ -40,19 +42,69 @@ Z = np.matrix(np.zeros(A.shape[1])).T
 
 _P = matrix(2 * A.T * A)
 _q = matrix((-2 * y.T * A).T)
+# _q = matrix((-2 * (C * A.T * A + y.T * A)).T)
 _G = matrix(-I)
 _h = matrix(Z)
 _A = matrix(C)
 _b = matrix(b)
+_A = None
+_b = None
 
-sol = solvers.qp(_P, _q, _G, _h, _A, _b)
-x = np.squeeze(np.array(sol['x']))
-# x[x < 0.05] = 0.0
-# x = x / np.linalg.norm(x)
-for i, xi in enumerate(x):
-    print("\t" + str(np.int(x[i]*100)).zfill(2) + "% at\t" + str(np.int(vx[i])) + ", " + str(np.int(vy[i])))
-print("\tOptimal vel:\t" + str(np.dot(x,vx)) + ", " + str(np.dot(x,vy)))
-print("\tOptimal std:\t" + str(np.dot(x,stdx)) + ", " + str(np.dot(x,stdy)))
+plotting = False
+if plotting:
+    L = np.logspace(-5,5,1000)
+    x_all = np.zeros([len(L), A.shape[1]])
+    y_all = np.zeros([len(L), len(y)])
+    y_all = np.zeros([len(L), 2])
+    y_all_approx = np.zeros([len(L), 2])
+    fig = plt.figure()
+    ax = plt.gca()
+    for i, l in enumerate(L):
+        # _b = matrix(l)
+        # _P = matrix(2 * A.T * A + 0. * I)
+        _P = matrix(2 * (A - y * C).T * (A - y * C) + l * I)
+        # _q = matrix((-2 * y.T * A + 0. * C).T)
+        _q = matrix((0. * C).T)
+        sol = solvers.qp(_P, _q, _G, _h, _A, _b)
+        x = np.squeeze(np.array(sol['x']))
+        x_all[i] = x / np.sum(x)
+        x_hat = x / np.sum(x)
+        y_all[i] = np.squeeze(y[0:2]) - np.array([np.dot(x_hat,vx), np.dot(x_hat,vy)])
+        x_hat[x_all[i] < 1e-2] = 0.
+        y_all_approx[i] = np.squeeze(y[0:2]) - np.array([np.dot(x_hat,vx), np.dot(x_hat,vy)])
+        # y_all[i] = np.squeeze(y) - np.array([np.dot(x,vx), np.dot(x,vy), np.dot(x,stdx), np.dot(x,stdy)])
+        # if np.sum(x > 1e-5) < 4:
+        #     print(x / np.sum(x))
+        #     print(y_all[i])
+        #     idx_lim = i
+        #     break
+    for j in range(x_all.shape[1]):
+        ax.semilogx(L, x_all[:,j])
+    ax2 = ax.twinx()
+    for j in range(y_all.shape[1]):
+        ax2.semilogx(L, y_all[:,j], '--')
+        ax2.semilogx(L, y_all_approx[:,j], ':')
+    ax.set_ylim([0,1.1])
+    ax2.set_ylim([-5,5])
+    # ax.set_xlim([-1e10,L[idx_lim]])
+    # ax.set_xlim([-1e10,L[y_all > 0.99*np.max(y_all)][0]])
+    plt.show()
+else:
+    _P = matrix(2 * (A - y * C).T * (A - y * C))
+    # _P = matrix(2 * (A.T * A))
+    _q = matrix((0 * C).T)
+    sol = solvers.qp(_P, _q, _G, _h, _A, _b)
+    x = np.squeeze(np.array(sol['x']))
+    x /= np.sum(x)
+    x_hat = x #/ np.sum(x)
+    # x[x_hat < 1e-5] = 0.
+    # x[x < 0.05] = 0.0
+    # x = x / np.linalg.norm(x)
+    for i, xi in enumerate(x):
+        print("\t" + str(np.int(x_hat[i]*100)).zfill(2) + "% at\t" + str(np.int(vx[i])) + ", " + str(np.int(vy[i])))
+    print("\tOptimal vel:\t" + str(np.dot(x,vx)) + ", " + str(np.dot(x,vy)))
+    print("\tOptimal std:\t" + str(np.dot(x,stdx)) + ", " + str(np.dot(x,stdy)))
+    print(np.dot(x,vx)**2 + np.dot(x,vy)**2)
 
 
 

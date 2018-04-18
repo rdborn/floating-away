@@ -158,7 +158,7 @@ class LoonSim:
 		self.loon_history = self.loon_history.append(loon_record, ignore_index=True)
 
 		p = self.loon.get_pos()
-		i_want_to_sample = (abs(p[2] - self.pathplanner.planner.alts_to_sample) < 30)
+		i_want_to_sample = np.array(True)#(abs(p[2] - self.pathplanner.planner.alts_to_sample) < 30)
 		if i_want_to_sample.any():
 			if dontsample:
 				pass
@@ -166,7 +166,7 @@ class LoonSim:
 				if alwayssample:
 					print("Omg we're sampling")
 					self.pathplanner.planner.alts_to_sample = self.pathplanner.planner.alts_to_sample[i_want_to_sample == False]
-					self.sample()
+					self.__sample__()
 					t_sample = self.tcurr
 					while (self.tcurr - t_sample) < self.samplingtime:
 						self.propogate(0, dontsample=True)
@@ -177,12 +177,12 @@ class LoonSim:
 					if going_the_right_way:
 						print("Omg we're sampling")
 						self.pathplanner.planner.alts_to_sample = self.pathplanner.planner.alts_to_sample[i_want_to_sample == False]
-						self.sample()
+						self.__sample__()
 						t_sample = self.tcurr
 						while (self.tcurr - t_sample) < self.samplingtime:
 							self.propogate(0, dontsample=True)
 
-	def sample(self):
+	def __sample__(self):
 		"""
 		Sample the wind velocity at the balloon's current position.
 		"""
@@ -191,6 +191,13 @@ class LoonSim:
 		self.pathplanner.planner.add_sample(p=p,
 									magnitude=magnitude+rng(1),
 									direction=direction+rng(0.1))
+
+	def sample(self):
+		print("Sampling")
+		self.propogate(0., alwayssample=True)
+
+	def off_nominal(self):
+		return self.pathplanner.planner.off_nominal
 
 	def plot(self, *args, **kwargs):
 		out_file = parsekw(kwargs, 'outfile', 'ERR_NO_FILE')
@@ -245,18 +252,31 @@ class LoonSim:
 			for jet in self.pathplanner.planner.jets.jetstreams.values():
 				height = (jet.max_alt - jet.min_alt)*1e-3
 				bottom = jet.min_alt*1e-3
-				width = 2*1e2
+				width = 2
 				direction = jet.direction
-				magnitude = 1e0 * np.log(jet.magnitude)
+				magnitude = 1e0 * np.log(jet.magnitude) / 2.
 				dlon = magnitude * np.sin(direction)
 				dlat = magnitude * np.cos(direction)
-				rect = Rectangle(np.array([-1e2,bottom]), width, height, facecolor='k', alpha=0.3)
-				arr = Arrow(0, jet.avg_alt*1e-3, dlon, dlat, 1e0, facecolor='k', alpha=0.3)
+				rect = Rectangle(np.array([-2.1,bottom]), width, height, facecolor='k', alpha=0.3)
+				arr = Arrow(-width/2.-0.1, jet.avg_alt*1e-3, dlon, dlat, 1e0*0.7, facecolor='k', alpha=0.3)
 				patches.append(rect)
 				patches.append(arr)
+			for jet in self.pathplanner.planner.jets_expectation.jetstreams.values():
+				height = (jet.max_alt - jet.min_alt)*1e-3
+				bottom = jet.min_alt*1e-3
+				width = 2
+				direction = jet.direction
+				magnitude = 1e0 * np.log(jet.magnitude) * 0.7
+				dlon = magnitude * np.sin(direction)
+				dlat = magnitude * np.cos(direction)
+				rect = Rectangle(np.array([0.1,bottom]), width, height, facecolor='k', alpha=0.3)
+				arr = Arrow(width/2.+0.1, jet.avg_alt*1e-3, dlon, dlat, 1e0*0.7, facecolor='k', alpha=0.3)
+				patches.append(rect)
+				patches.append(arr)
+			rect = Rectangle(np.array([-width,0.]), 2*width, 1e-3, facecolor='k', alpha=0.3)
 		collection = PatchCollection(patches, alpha=0.3, facecolor='k')
 		rects = self.ax_alt_jets.add_collection(collection)
-		plt.setp(self.ax_alt_jets.get_xticklabels(), visible=False)
+		# plt.setp(self.ax_alt_jets.get_xticklabels(), visible=False)
 
 		# plot cardinal directions
 		cardinal_dirs = []
@@ -276,7 +296,7 @@ class LoonSim:
 		cards = self.ax_alt_dir.add_collection(cardinal_collection)
 
 		# Plot actual field
-		N_test = 1000
+		N_test = 200
 		p_test = np.zeros([N_test, 3])
 		z_test = np.linspace(0.0, 30000.0, N_test)
 		p_test[:,0] = lats[0] * np.ones(N_test)
@@ -303,18 +323,31 @@ class LoonSim:
 									mag_test_bound2,
 									mag_test_bound3,
 									mag_test_bound4], axis=0)
+			mag_test = np.zeros(len(vlat_test))
+			mag_test_lower = np.zeros(len(vlat_test))
+			mag_test_upper = np.zeros(len(vlat_test))
+			for i in range(len(mag_test)):
+				mag_test[i], mag_std = pyutils.get_mag_dist(vlat_test[i], vlon_test[i], std_x[i], std_y[i], 400)
+				mag_test_lower[i] = mag_test[i] - mag_std
+				mag_test_upper[i] = mag_test[i] + mag_std
 
 			dir_test = np.zeros(len(vlat_test))
 			dir_lower = np.zeros(len(vlat_test))
 			dir_upper = np.zeros(len(vlat_test))
 			for i in range(len(vlat_test)):
-				dir_lower[i], dir_test[i], dir_upper[i] = pyutils.get_angle_range(vlat_test[i], vlon_test[i], std_x[i], std_y[i])
-			unbounded_idx = (abs(abs(dir_lower - dir_upper) - 360) < 1e-6)
+				# dir_lower[i], dir_test[i], dir_upper[i] = pyutils.get_angle_range(vlat_test[i], vlon_test[i], std_x[i], std_y[i])
+				dir_test[i], dir_std = pyutils.get_angle_dist(vlat_test[i], vlon_test[i], std_x[i], std_y[i], 400)
+				dir_lower[i] = dir_test[i] - dir_std
+				dir_upper[i] = dir_test[i] + dir_std
+				dir_test[i] = dir_test[i] * 180.0 / np.pi
+				dir_lower[i] = dir_lower[i] * 180.0 / np.pi
+				dir_upper[i] = dir_upper[i] * 180.0 / np.pi
+			# unbounded_idx = (abs(abs(dir_lower - dir_upper) - 360) < 1e-6)
 			dir_test = dir_test % 360
 			dir_lower = dir_lower % 360
 			dir_upper = dir_upper % 360
-			dir_lower[unbounded_idx] = -45.0
-			dir_upper[unbounded_idx] = 405.0
+			# dir_lower[unbounded_idx] = -45.0
+			# dir_upper[unbounded_idx] = 405.0
 			dir_lower[dir_lower > dir_test] -= 360
 			dir_upper[dir_upper < dir_test] += 360
 
@@ -364,7 +397,10 @@ class LoonSim:
 
 		# SCATTER
 		prev_latlon = self.ax_latlon.scatter(lons[-1], lats[-1], c='k', zorder=10)
-		prev_alt = self.ax_alt_jets.scatter(0, alts[-1], c='k')
+		if self.pathplanner.planner.off_nominal:
+			prev_alt = self.ax_alt_jets.scatter(1, alts[-1], c='k')
+		else:
+			prev_alt = self.ax_alt_jets.scatter(-1, alts[-1], c='k')
 
 		# SETP
 		plt.setp(self.ax_alt_jets.get_yticklabels(), visible=False)
@@ -376,6 +412,7 @@ class LoonSim:
 		self.ax_alt_dir.set_xlim([-45, 405])
 		self.ax_alt_mag.set_xlim([0,50])
 		self.ax_cost.set_xlim([0, np.max(all_t)*1.1/3600.0])
+		self.ax_alt_jets.set_xlim([-4,4])
 
 		# YLIM
 		self.ax_latlon.set_ylim([-100,100])

@@ -32,7 +32,7 @@ class FieldEstimator:
     def __build_data__(self, key):
         X = self.X[key]
         y = self.y[key]
-        if reset:
+        if self.reset:
             self.__reset__(key)
         if key in self.recently_sampled_X.keys():
             X = np.append(X, self.recently_sampled_X[key])
@@ -46,7 +46,7 @@ class FieldEstimator:
 
     def fit(self, *args, **kwargs):
         key = parsekw(kwargs, 'key', None)
-        reset = parsekw(kwargs, 'reset', True)
+        self.reset = parsekw(kwargs, 'reset', True)
         X, y = self.__build_data__(key)
         self.estimators[key].fit(X, y)
 

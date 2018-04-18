@@ -6,6 +6,7 @@ from pandas import DataFrame
 from matplotlib import pyplot as plt
 
 from pysim.loonsim import LoonSim
+from pyutils.pyutils import parsekw
 
 #############################################
 # SETUP PARAMETERS
@@ -14,9 +15,9 @@ from pysim.loonsim import LoonSim
 # Choose the planner algorithm and estimator scheme
 # options: montecarlo, mpc, mpcfast, ldp, wap, pic, naive
 planner = 'mpcfast'
-alwayssample = True
-dontsample = False
-samplingtime = 4*300
+alwayssample = False
+dontsample = True
+samplingtime = 1*300
 gamma = np.array([1.,1e5,0.,0.,0.,0.]) # tuning parameter for cost function (lower = care more about pos, less about vel)
 while alwayssample and gamma[-1] != 0:
 	print("WOAH you sure about that?")
@@ -101,23 +102,25 @@ N = 1
 # LOCAL FUNCTIONS
 #############################################
 
-def choose_ctrl(LS, xstar):
+def choose_ctrl(LS, xstar, **kwargs):
+	exact = parsekw(kwargs, 'exact', False)
 	x = LS.loon.get_pos()[2]
-	x_id = LS.pathplanner.planner.jets.find(x).id
-	xstar_id = LS.pathplanner.planner.jets.find(xstar).id
-	if x_id == xstar_id:
-		return 0
-	elif xstar - x > 0:
+	if not exact:
+		x_id = LS.pathplanner.planner.jets.find(x).id
+		xstar_id = LS.pathplanner.planner.jets.find(xstar).id
+		if x_id == xstar_id:
+			return 0
+	if xstar - x > 0:
 		return 1
 	elif xstar - x < 0:
 		return -1
 	else:
 		return 0
 
-def get_there(LS, target, u, T):
+def get_there(LS, target, u, T, **kwargs):
 	pos = LS.loon.get_pos()
 	p = pos[2]
-	c = choose_ctrl(LS, target)
+	c = choose_ctrl(LS, target, **kwargs)
 	if c == 0:
 		dt = 0.0
 		while (T - dt) > 0.0:
@@ -286,14 +289,18 @@ while True:
 							pstar=pstar,
 							depth=depth,
 							gamma=gamma)
-			pol = pol[1:] if len(pol) > 1 else pol
-			print("Policy:")
-			print("\t" + str(pol))
-			# if plot:
-			# 	if plottofile:
-			# 		LS.plot(outfile=out_file, naive=(planner=='naive'))
-			# 	else:
-			# 		LS.plot(naive=(planner=='naive'))
+			if LS.off_nominal():
+				print("Off-nominal Policy:")
+				print("\t" + str(pol))
+			else:
+				pol = pol[1:] if len(pol) > 1 else pol
+				print("Policy:")
+				print("\t" + str(pol))
+			if plot:
+				if plottofile:
+					LS.plot(outfile=out_file, naive=(planner=='naive'))
+				else:
+					LS.plot(naive=(planner=='naive'))
 			# If the policy was negative, that was a sign from the naive path planner
 			# that it needs to retrain, so we need to sample the air column
 			if pol[0] < 0:
@@ -315,7 +322,12 @@ while True:
 						break
 					print("Moving to altitude:")
 					print("\t" + str(np.int(pol[i])))
-					LS = get_there(LS, pol[i], u, T)
+					if LS.off_nominal():
+						entropy_threshold = 2.
+						if pol[1] > entropy_threshold:
+							LS = get_there(LS, pol[i], u, T, exact=True)
+							LS.sample()
+					LS = get_there(LS, pol[i], u, T, exact=False)
 			pos = LS.loon.get_pos()
 			print("New position:")
 			print("\t(" + str(np.int(pos[0])) + ", " + str(np.int(pos[1])) + ", " + str(np.int(pos[2])) + ")")
