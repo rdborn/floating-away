@@ -204,7 +204,7 @@ while True:
 						"Don't sample:\t" + str(dontsample) + " (if True, overrides always sample)\n" + \
 						"Always sample:\t" + str(alwayssample) + "(shouldn't be True with gamma != [X, X, X, X, X, 0])\n"\
 						"Sampling time:\t" + str(samplingtime) + "\n" + \
-						"Reduced data:\tnope\n" + \
+						"Reduced data:\t0.5\n" + \
 						"Field Estimator:\t" + fieldestimator + "\n" + \
 						"Environment Type:\t" + environment + "\n" + \
 						"Minimum Safe Altitude:\t" + str(lower) + "\tm\n" + \
@@ -269,19 +269,11 @@ while True:
 		it = 0
 		n_frames = 200
 		while LS.tcurr < 46 * 3600:
+			u = 5.0
 			# Set output file for plots
 			out_file = out_plot_folder + str(it).zfill(len(str(n_frames))) + '.png'
 			# Increment iterator
 			it += 1
-			# Determine a tractable depth if we're using a tree search method
-			# if planner == 'mpcfast':
-			# 	n_jets = 0
-			# 	for jet in LS.pathplanner.planner.jets.jetstreams.values():
-			# 		if jet.avg_alt > lower and jet.avg_alt < upper:
-			# 			n_jets += 1
-			# 	depth = np.int(np.ceil(np.log(n_nodes_desired) / np.log(n_jets)))
-			# else:
-			# 	depth = 1
 			print(str(it) + " Planning... depth: " + str(depth))
 			# Figure out our next move
 			pol = LS.plan(	u=u,
@@ -327,7 +319,10 @@ while True:
 						if pol[1] > entropy_threshold:
 							LS = get_there(LS, pol[i], u, T, exact=True)
 							LS.sample()
-					LS = get_there(LS, pol[i], u, T, exact=False)
+						else:
+							LS = get_there(LS, pol[i], u, T, exact=False)
+					else:
+						LS = get_there(LS, pol[i], u, T, exact=False)
 			pos = LS.loon.get_pos()
 			print("New position:")
 			print("\t(" + str(np.int(pos[0])) + ", " + str(np.int(pos[1])) + ", " + str(np.int(pos[2])) + ")")
@@ -347,33 +342,38 @@ while True:
 		z = LS.loon_history['z'][:]
 		vx = LS.loon_history['vx'][:]
 		vy = LS.loon_history['vy'][:]
-		vz = LS.loon_history['vz'][:]
+		vx_pred = LS.loon_history['vx_pred'][:]
+		vy_pred = LS.loon_history['vy_pred'][:]
+		u = LS.loon_history['u'][:]
 		stdx = LS.loon_history['stdx'][:]
 		stdy = LS.loon_history['stdy'][:]
+		off_nominal = LS.loon_history['off_nominal'][:]
+		sampling = LS.loon_history['sampling'][:]
 		with open((record_folder + record_name + ".csv"), "w+") as f:
-			f.write("jpos calculated as ||(x,y) - (xstar,ystar)||_2\n")
-			f.write("jvel calculated as ((((x,y) - (xstar,ystar))_hat . (vx,vy)_hat) + 1), where ()_hat is a normalizing operator\n")
-			f.write("jtot calculated as ln(jpos((jvel)(gamma)+1))\n")
-			f.write("t,xstar,ystar,zstar,x,y,z,vx,vy,vz,jpos,jvel,jtot,stdx,stdy\n")
+			# f.write("jpos calculated as ||(x,y) - (xstar,ystar)||_2\n")
+			# f.write("jvel calculated as ((((x,y) - (xstar,ystar))_hat . (vx,vy)_hat) + 1), where ()_hat is a normalizing operator\n")
+			# f.write("jtot calculated as ln(jpos((jvel)(gamma)+1))\n")
+			f.write("pstar = [0, 0]")
+			f.write("BLANK")
+			f.write("BLANK")
+			f.write("t,x,y,z,u,vx,vy,vx_pred,vy_pred,stdx,stdy,off_nominal,sampling\n")
 			for i in range(len(t)):
-				J_pos = (np.sum((np.array([x[i],y[i]]) - pstar[0:2])**2))
-				J_vel = vel_cost(np.array([x[i],y[i]]), pstar, np.array([vx[i],vy[i]]))
-				J_tot = np.log(J_pos * (J_vel * gamma + 1))
+				# J_pos = (np.sum((np.array([x[i],y[i]]) - pstar[0:2])**2))
+				# J_vel = vel_cost(np.array([x[i],y[i]]), pstar, np.array([vx[i],vy[i]]))
+				# J_tot = np.log(J_pos * (J_vel * gamma + 1))
 				f.write(str(t[i]) + "," + \
-						str(pstar[0]) + "," + \
-						str(pstar[1]) + "," + \
-						str(pstar[2]) + "," + \
 						str(x[i]) + "," + \
 						str(y[i]) + "," + \
 						str(z[i]) + "," + \
+						str(u[i]) + "," + \
 						str(vx[i]) + "," + \
 						str(vy[i]) + "," + \
-						str(vz[i]) + "," + \
-						str(J_pos) + "," + \
-						str(J_vel) + "," + \
-						str(J_tot) + "," + \
+						str(vx_pred[i]) + "," + \
+						str(vy_pred[i]) + "," + \
 						str(stdx[i]) + "," + \
-						str(stdy[i]) + \
+						str(stdy[i]) + "," + \
+						str(off_nominal[i]) + "," + \
+						str(sampling[i]) + \
 						"\n")
 
 		# Make a movie
@@ -385,4 +385,4 @@ while True:
 				"-vcodec " +	"libx264" + " " + \
 				"-crf " + 		"25" + " " + \
 				movie_folder + movie_name + ".mp4"
-		os.system(command)
+		# os.system(command)

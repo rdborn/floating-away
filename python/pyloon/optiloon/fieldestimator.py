@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.patches import Rectangle, Arrow
+from matplotlib.collections import PatchCollection
 from sklearn.gaussian_process import GaussianProcessRegressor as GPR
 from sklearn.gaussian_process.kernels import RBF, Matern, WhiteKernel, ConstantKernel as C
 from sklearn.neighbors import KNeighborsRegressor as KNR
@@ -11,6 +13,7 @@ sys.path.insert(1, os.path.join(sys.path[0],'..'))
 
 from pyutils.pyutils import parsekw, hash3d, hash4d, rng, downsize
 from pyutils import pyutils
+from pyutils.constants import DEGLAT_2_KM
 
 class FieldEstimator:
     def __init__(self, *args, **kwargs):
@@ -32,8 +35,8 @@ class FieldEstimator:
     def __build_data__(self, key):
         X = self.X[key]
         y = self.y[key]
-        if self.reset:
-            self.__reset__(key)
+        # if self.reset:
+            # self.__reset__(key)
         if key in self.recently_sampled_X.keys():
             X = np.append(X, self.recently_sampled_X[key])
             y = np.append(y, self.recently_sampled_y[key])
@@ -76,6 +79,13 @@ class FieldEstimator:
 
     def changing_estimators(self, *args, **kwargs):
         return False
+
+    def __set_prediction_key__(self, key):
+        # if self.prediction_key in self.estimator_locations.keys():
+        #     if key in self.estimator_locations.keys():
+        #         print("Changing from " + str(self.estimator_locations[self.prediction_key]) + \
+        #                 " to " + str(self.estimator_locations[key]))
+        self.prediction_key = key
 
 class GPFE(FieldEstimator):
     def __init__(self, *args, **kwargs):
@@ -120,7 +130,7 @@ class GPFE(FieldEstimator):
                 self.estimator_locations[key] = p
                 for key in self.X.keys():
                     self.X[key] = np.atleast_2d(self.X[key]).T
-            self.prediction_key = key
+            FieldEstimator.__set_prediction_key__(self, key)
 
     def changing_estimators(self, *args, **kwargs):
         if len(self.X[0][0]) == 1:
@@ -138,18 +148,22 @@ class GPFE(FieldEstimator):
             d = dx**2 + dy**2
             if d < radius**2 and d < d_old:
                 if key != self.prediction_key:
-                    self.prediction_key = key
+                    print("C H A N G I N G !")
+                    FieldEstimator.__set_prediction_key__(self, key)
                     return True
         return False
 
 class Multi1DGP(FieldEstimator):
     def __init__(self, *args, **kwargs):
-        self.prediction_key = 0.0
+        self.prediction_key = 0.
         FieldEstimator.__init__(self)
+        self.n_closest = np.array([])
+        self.fitted = np.array([])
 
     def fit(self, *args, **kwargs):
         X = parsekw(kwargs, 'X', None)
         y = parsekw(kwargs, 'y', None)
+        p = parsekw(kwargs, 'p', np.zeros(3))
         restrict_data = parsekw(kwargs, 'restrict', False)
         restriction = parsekw(kwargs, 'restriction', 0.5)
         default_kernel = C(1.0, (1e-3, 1e3)) * RBF(0.5, (1e-6, 1e0))
@@ -158,22 +172,29 @@ class Multi1DGP(FieldEstimator):
         print("\t\tpartitioning...")
         self.X = dict()
         self.y = dict()
+        self.n_closest = np.array([])
+        self.fitted = np.array([])
         self.__partition__(X, y)
         if restrict_data:
             self.__restrict__(restriction)
+        # for i, key in enumerate(self.n_closest):
         for i, key in enumerate(self.estimator_locations.keys()):
-            self.prediction_key = key
+            FieldEstimator.__set_prediction_key__(self, key)
             # print progress and lateral coordinates of this estimator
-            print("\t\t" + str(i) + "/" + str(len(self.estimator_locations.keys())) + \
-                "\t(" + str(self.estimator_locations[key][0]) + ", " + \
-                str(self.estimator_locations[key][1]) + ")")
+            # print("\t\t" + str(i) + "/" + str(len(self.estimator_locations.keys())) + \
+            #     "\t(" + str(self.estimator_locations[key][0]) + ", " + \
+            #     str(self.estimator_locations[key][1]) + ")")
+            FieldEstimator.__reset__(self, key)
             self.estimators[key] = GPR(kernel=kernel, n_restarts_optimizer=n_restarts_optimizer)
-            FieldEstimator.fit(self, key=key, reset=True)
+            # FieldEstimator.fit(self, key=key, reset=True)
+            # self.fitted = np.append(self.fitted, key)
+        self.__fit_n_closest__(p, 1)
 
     def predict(self, *arg, **kwargs):
         radius = parsekw(kwargs, 'radius', 40000)
         p = np.atleast_2d(parsekw(kwargs, 'p', None))
         self.changing_estimators(p=p, radius=radius)
+        # self.__fit_n_closest__(p, 4)
         return FieldEstimator.predict(self,
                                     key=self.prediction_key,
                                     p=p[:,2],
@@ -238,23 +259,47 @@ class Multi1DGP(FieldEstimator):
                 for key in self.X.keys():
                     self.X[key] = np.atleast_2d(self.X[key]).T
 
+    def __fit_n_closest__(self, p, n):
+        p = np.atleast_2d(np.squeeze(p))
+        distances = np.inf * np.ones(n)
+        keys = -np.ones(n)
+        max_idx = np.where(distances == np.max(distances))[0][0]
+        for i, key in enumerate(self.estimator_locations.keys()):
+            dx = self.estimator_locations[key][0] - p[0,0]
+            dy = self.estimator_locations[key][1] - p[0,1]
+            d = dx**2 + dy**2
+            if d < distances[max_idx]:
+                distances[max_idx] = d
+                keys[max_idx] = key
+                max_idx = np.where(distances == np.max(distances))[0][0]
+        self.n_closest = keys
+        for i, key in enumerate(self.n_closest):
+            if key not in self.fitted:
+                print("\t\t(" + str(self.estimator_locations[key][0]) + ", " + \
+                    str(self.estimator_locations[key][1]) + ")")
+                FieldEstimator.fit(self, key=key, reset=True)
+                self.fitted = np.append(self.fitted, key)
+
     def changing_estimators(self, *args, **kwargs):
-        pos = np.atleast_2d(parsekw(kwargs, 'p', None))
+        pos = np.atleast_2d(np.squeeze(parsekw(kwargs, 'p', None)))
         radius = parsekw(kwargs, 'radius', 40000)
+        self.__fit_n_closest__(pos, 1)
         keys = self.estimator_locations.keys()
         old_loc = self.estimator_locations[self.prediction_key]
         oldx = old_loc[0]
         oldy = old_loc[1]
         d_old = (oldx - pos[0,0])**2 + (oldy - pos[0,1])**2
+        return_val = False
         for i, key in enumerate(keys):
             dx = self.estimator_locations[key][0] - pos[0,0]
             dy = self.estimator_locations[key][1] - pos[0,1]
             d = dx**2 + dy**2
             if d < radius**2 and d < d_old:
                 if key != self.prediction_key:
-                    self.prediction_key = key
-                    return True
-        return False
+                    FieldEstimator.__set_prediction_key__(self, key)
+                    d_old = d
+                    return_val = True
+        return return_val
 
     def add_data(self, *args, **kwargs):
         FieldEstimator.add_data(self,
@@ -262,6 +307,54 @@ class Multi1DGP(FieldEstimator):
                                 X=kwargs.get('X'),
                                 y=kwargs.get('y'))
         FieldEstimator.fit(self, key=self.prediction_key, reset=False)
+
+    def plot(self, ax):
+        p0_notfitted = []
+        p1_notfitted = []
+        patches_notfitted = []
+        p0_fitted = []
+        p1_fitted = []
+        patches_fitted = []
+        width = 0.5 * DEGLAT_2_KM
+        height = 0.5 * DEGLAT_2_KM
+        for key in self.estimator_locations.keys():
+            p = self.estimator_locations[key] * 1e-3
+            left = p[1] - 0.25 * DEGLAT_2_KM
+            bottom = p[0] - 0.25 * DEGLAT_2_KM
+            if key not in self.fitted:
+                p0_notfitted.append(p[0])
+                p1_notfitted.append(p[1])
+                color = 'k'
+                rect = Rectangle(np.array([left,bottom]), width, height, edgecolor='k', facecolor=color, alpha=0.3)
+                patches_notfitted.append(rect)
+            elif key != self.prediction_key:
+                p0_fitted.append(p[0])
+                p1_fitted.append(p[1])
+                color = 'b'
+                rect = Rectangle(np.array([left,bottom]), width, height, edgecolor='k', facecolor=color, alpha=0.15)
+                patches_fitted.append(rect)
+        collection_fitted = PatchCollection(patches_fitted, alpha=0.15, edgecolor='k', facecolor='k')
+        collection_notfitted = PatchCollection(patches_notfitted, alpha=0.3, edgecolor='k', facecolor='k')
+        r1 = ax.add_collection(collection_notfitted)
+        r2 = ax.add_collection(collection_fitted)
+        s1 = ax.scatter(p1_notfitted, p0_notfitted, c=0.5*np.ones(3), alpha=0.)
+        s2 = ax.scatter(p1_fitted, p0_fitted, c='b', alpha=0.)
+        loc = self.estimator_locations[self.prediction_key] * 1e-3
+        left = loc[1] - 0.25 * DEGLAT_2_KM
+        bottom = loc[0] - 0.25 * DEGLAT_2_KM
+        patches = []
+        rect = Rectangle(np.array([left,bottom]), width, height, edgecolor='k', fill=False, alpha=0.)
+        patches.append(rect)
+        collection = PatchCollection(patches, alpha=0., edgecolor='k')
+        r3 = ax.add_collection(collection)
+        s3 = ax.scatter(loc[1], loc[0], c='y', alpha=0.)
+        return s1, s2, s3, r1, r2, r3
+
+    def plot_current(self, ax, **kwargs):
+        s = parsekw(kwargs, 's', 50)
+        c = parsekw(kwargs, 'c', 'r')
+        loc = self.estimator_locations[self.prediction_key]
+        return ax.scatter(loc[1]*1e-3, loc[0]*1e-3, edgecolors=c, s=s, marker='o', facecolors='none')
 
 class KNN1DGP(Multi1DGP):
     def predict(self, *arg, **kwargs):

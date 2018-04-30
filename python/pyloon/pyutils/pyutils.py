@@ -1,6 +1,33 @@
 import numpy as np
 from scipy.stats import norm
 
+def breakpoint():
+    while True:
+        pass
+
+def combined_mean(arr1, arr2):
+    mu1 = np.mean(arr1)
+    mu2 = np.mean(arr2)
+    n1 = len(arr1)
+    n2 = len(arr2)
+    muc = (mu1 * n1 + mu2 * n2) / (n1 + n2)
+    return muc
+
+def combined_var(arr1, arr2):
+    var1 = np.var(arr1)
+    var2 = np.var(arr2)
+    mu1 = np.mean(arr1)
+    mu2 = np.mean(arr2)
+    n1 = len(arr1)
+    n2 = len(arr2)
+    if n1 == 0:
+        return var2
+    if n2 == 0:
+        return var1
+    muc = (mu1 * n1 + mu2 * n2) / (n1 + n2)
+    varc = (n1 * (var1 + (mu1 - muc)**2) + n2 * (var2 + (mu2 - muc)**2)) / (n1 + n2)
+    return varc
+
 def bivar_normal_entropy(stdx, stdy):
     # This is for a bivariate normal distribution with no covariance
     return 0.5 * np.log((2 * np.pi * np.e)**2 * stdx * stdy)
@@ -53,11 +80,14 @@ def get_angle_range(x, y, stdx, stdy):
     return theta_lower, theta_nom, theta_upper
 
 def get_angle_dist(x, y, stdx, stdy, n):
-    theta = np.zeros(n)
-    for i in range(len(theta)):
-        x_i = np.random.normal(x, stdx)
-        y_i = np.random.normal(y, stdy)
-        theta[i] = np.arctan2(y_i, x_i)
+    x = np.random.normal(x, stdx, n)
+    y = np.random.normal(y, stdy, n)
+    theta = np.arctan2(y, x)
+    # theta = np.zeros(n)
+    # for i in range(len(theta)):
+    #     x_i = np.random.normal(x, stdx)
+    #     y_i = np.random.normal(y, stdy)
+    #     theta[i] = np.arctan2(y_i, x_i)
     # theta = theta % (2 * np.pi)
     # print(np.array(theta*180/np.pi,dtype=int))
     theta_mu_1 = np.mean(theta)

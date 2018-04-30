@@ -25,7 +25,9 @@ class LoonSim:
 		self.dt = 1.0 / self.Fs
 		self.tcurr = 0.0
 		self.tlast = 0.0
+		self.trecord = 0.0
 		self.resetting = False
+		self.sampling = False
 		i_should_plot = parsekw(kwargs, 'plot', True)
 		i_should_plot_to_file = parsekw(kwargs, 'plottofile', False)
 		self.samplingtime = parsekw(kwargs, 'samplingtime', 0.)
@@ -85,13 +87,26 @@ class LoonSim:
 			self.ax_plan = self.fancy_plot.add_subplot(		gs[:,			7*pad:], sharey=self.ax_alt_mag)
 			self.ax_cost = self.fancy_plot.add_subplot(		gs[4*pad-1:,	:4*pad-1])
 			self.prev_plot_idx = 0
-			im = Image.open('stanford_area.png').convert('L') # grayscale
-			# im = plt.imread('stanford_area.png') # color
-			self.ax_latlon.imshow(im, extent=(-100,100,-100,100), cmap='gray')
+			# im = Image.open('stanford_area.png').convert('L') # grayscale
+			# self.ax_latlon.imshow(im, extent=(-100,100,-100,100), cmap='gray')
+			im = plt.imread('stanford_area.png') # color
+			self.ax_latlon.imshow(im, extent=(-100,100,-100,100))
 			if not i_should_plot_to_file:
 				plt.ion()
-		self.loon_history = DataFrame(columns=['t','x','y','z','vx','vy','vz','stdx','stdy'])
-		loon_initial_pos = DataFrame([[self.tcurr, self.loon.x, self.loon.y, self.loon.z, 0.0, 0.0, 0.0, 0.0, 0.0]], columns=['t','x','y','z','vx','vy','vz','stdx','stdy'])
+		self.loon_history = DataFrame(columns=['t','x','y','z','u','vx','vy','vx_pred','vy_pred','stdx','stdy','off_nominal','sampling'])
+		loon_initial_pos = DataFrame([[self.tcurr,
+									self.loon.x,
+									self.loon.y,
+									self.loon.z,
+									0.0,
+									0.0,
+									0.0,
+									0.0,
+									0.0,
+									0.0,
+									0.0,
+									False,
+									False]], columns=['t','x','y','z','u','vx','vy','vx_pred','vy_pred','stdx','stdy','off_nominal','sampling'])
 		self.loon_history = self.loon_history.append(loon_initial_pos, ignore_index=True)
 
 	""" NOT SUPPORTED """
@@ -106,7 +121,7 @@ class LoonSim:
 	def plan(self, *args, **kwargs):
 		if (self.tcurr - self.tlast) / 3600.0 > self.environment.hr_inc:
 			if self.pathplanner.planner.fieldestimator != 'naive':
-				self.pathplanner.planner.retrain(field=self.environment.wind)
+				self.pathplanner.planner.retrain(field=self.environment.wind, p=self.loon.get_pos())
 				self.tlast += (self.environment.hr_inc * 3600.0)
 		return self.pathplanner.planner.plan(	loon=self.loon,
 					                            u=kwargs.get('u'),
@@ -130,7 +145,6 @@ class LoonSim:
 
 		p = self.loon.get_pos()
 		vx, vy = self.environment.get_flow(p=p, t=self.tcurr)
-		vx_pred, vy_pred, stdx, stdy = self.pathplanner.planner.predict(p)
 
 		# Hacky way to push the agent back into the field
 		# if it leaves the defined area
@@ -144,20 +158,29 @@ class LoonSim:
 		vloon = self.loon.get_vel()
 		self.loon.update(vx=vx+rng(w), vy=vy+rng(w), vz=vz+rng(w))
 		self.tcurr += self.dt
+		self.trecord += self.dt
 
-		loon_record = DataFrame([[self.tcurr,
-								self.loon.x,
-								self.loon.y,
-								self.loon.z,
-								vx,
-								vy,
-								vz,
-								stdx[0],
-								stdy[0]]],
-								columns=['t','x','y','z','vx','vy','vz','stdx','stdy'])
-		self.loon_history = self.loon_history.append(loon_record, ignore_index=True)
+		if self.trecord >= 60.0:
+			self.trecord = 0.
+			vx_pred, vy_pred, stdx, stdy = self.pathplanner.planner.predict(p)
+			loon_record = DataFrame([[self.tcurr,
+									self.loon.x,
+									self.loon.y,
+									self.loon.z,
+									u,
+									vx,
+									vy,
+									vx_pred[0],
+									vy_pred[0],
+									stdx[0],
+									stdy[0],
+									self.off_nominal(),
+									self.sampling]],
+									columns=['t','x','y','z','u','vx','vy','vx_pred','vy_pred','stdx','stdy','off_nominal','sampling'])
+			self.loon_history = self.loon_history.append(loon_record, ignore_index=True)
+			# print(loon_record)
 
-		p = self.loon.get_pos()
+		# p = self.loon.get_pos()
 		i_want_to_sample = np.array(True)#(abs(p[2] - self.pathplanner.planner.alts_to_sample) < 30)
 		if i_want_to_sample.any():
 			if dontsample:
@@ -165,22 +188,24 @@ class LoonSim:
 			else:
 				if alwayssample:
 					print("Omg we're sampling")
-					self.pathplanner.planner.alts_to_sample = self.pathplanner.planner.alts_to_sample[i_want_to_sample == False]
+					# self.pathplanner.planner.alts_to_sample = self.pathplanner.planner.alts_to_sample[i_want_to_sample == False]
 					self.__sample__()
 					t_sample = self.tcurr
+					self.sampling = True
 					while (self.tcurr - t_sample) < self.samplingtime:
 						self.propogate(0, dontsample=True)
-				else:
-					pstar = np.zeros(3)
-					vx_samp, vy_samp, stdx_samp, stdy_samp = self.pathplanner.planner.predict(p)
-					going_the_right_way = self.pathplanner.planner.__cost_of_vel__(p[0:2], pstar,np.array([vx_samp, vy_samp])) < 1
-					if going_the_right_way:
-						print("Omg we're sampling")
-						self.pathplanner.planner.alts_to_sample = self.pathplanner.planner.alts_to_sample[i_want_to_sample == False]
-						self.__sample__()
-						t_sample = self.tcurr
-						while (self.tcurr - t_sample) < self.samplingtime:
-							self.propogate(0, dontsample=True)
+					self.sampling = False
+				# else:
+				# 	pstar = np.zeros(3)
+				# 	vx_samp, vy_samp, stdx_samp, stdy_samp = self.pathplanner.planner.predict(p)
+				# 	going_the_right_way = self.pathplanner.planner.__cost_of_vel__(p[0:2], pstar,np.array([vx_samp, vy_samp])) < 1
+				# 	if going_the_right_way:
+				# 		print("Omg we're sampling")
+				# 		self.pathplanner.planner.alts_to_sample = self.pathplanner.planner.alts_to_sample[i_want_to_sample == False]
+				# 		self.__sample__()
+				# 		t_sample = self.tcurr
+				# 		while (self.tcurr - t_sample) < self.samplingtime:
+				# 			self.propogate(0, dontsample=True)
 
 	def __sample__(self):
 		"""
@@ -207,7 +232,8 @@ class LoonSim:
 		lons = np.array(self.loon_history['y'][self.prev_plot_idx:])
 		alts = np.array(self.loon_history['z'][self.prev_plot_idx:])
 		dists = np.sqrt(lats**2 + lons**2)
-		t = self.dt * np.array(range(len(dists)))
+		# t = self.dt * np.array(range(len(dists)))
+		t = 60. * np.array(range(len(dists)))
 		t -= np.max(t)
 		t += self.tcurr
 
@@ -219,7 +245,8 @@ class LoonSim:
 		all_stdxs= np.sqrt(np.cumsum(all_stdxs**2 * self.dt))
 		all_stdys= np.sqrt(np.cumsum(all_stdys**2 * self.dt))
 		all_dists = np.sqrt(all_lats**2 + all_lons**2)
-		all_t = self.dt * np.array(range(len(all_dists)))
+		# all_t = self.dt * np.array(range(len(all_dists)))
+		all_t = 60. * np.array(range(len(all_dists)))
 		avg_dists = np.cumsum(all_dists) / all_t
 		avg_d_alt = np.cumsum(abs(all_alts[1:] - all_alts[:-1]))
 		avg_d_alt = np.append(np.zeros(1), avg_d_alt) / all_t
@@ -247,35 +274,12 @@ class LoonSim:
 				dlat = np.log(sampled_mags[i]) * np.cos(sampled_dirs[i])
 				arr = Arrow(0, sampled_alts[i]*1e-3, dlon, dlat, 1e0, facecolor='k', alpha=0.3)
 				patches.append(arr)
+			collection = PatchCollection(patches, alpha=0.3, facecolor='k')
+			rects = self.ax_alt_jets.add_collection(collection)
 		else:
 			# Plot jetstreams
-			for jet in self.pathplanner.planner.jets.jetstreams.values():
-				height = (jet.max_alt - jet.min_alt)*1e-3
-				bottom = jet.min_alt*1e-3
-				width = 2
-				direction = jet.direction
-				magnitude = 1e0 * np.log(jet.magnitude) / 2.
-				dlon = magnitude * np.sin(direction)
-				dlat = magnitude * np.cos(direction)
-				rect = Rectangle(np.array([-2.1,bottom]), width, height, facecolor='k', alpha=0.3)
-				arr = Arrow(-width/2.-0.1, jet.avg_alt*1e-3, dlon, dlat, 1e0*0.7, facecolor='k', alpha=0.3)
-				patches.append(rect)
-				patches.append(arr)
-			for jet in self.pathplanner.planner.jets_expectation.jetstreams.values():
-				height = (jet.max_alt - jet.min_alt)*1e-3
-				bottom = jet.min_alt*1e-3
-				width = 2
-				direction = jet.direction
-				magnitude = 1e0 * np.log(jet.magnitude) * 0.7
-				dlon = magnitude * np.sin(direction)
-				dlat = magnitude * np.cos(direction)
-				rect = Rectangle(np.array([0.1,bottom]), width, height, facecolor='k', alpha=0.3)
-				arr = Arrow(width/2.+0.1, jet.avg_alt*1e-3, dlon, dlat, 1e0*0.7, facecolor='k', alpha=0.3)
-				patches.append(rect)
-				patches.append(arr)
-			rect = Rectangle(np.array([-width,0.]), 2*width, 1e-3, facecolor='k', alpha=0.3)
-		collection = PatchCollection(patches, alpha=0.3, facecolor='k')
-		rects = self.ax_alt_jets.add_collection(collection)
+			rects = self.pathplanner.planner.jets.plot(self.ax_alt_jets, width=2., left=-2.1)
+			rects_expectation = self.pathplanner.planner.jets_expectation.plot(self.ax_alt_jets, width=2., left=0.1)
 		# plt.setp(self.ax_alt_jets.get_xticklabels(), visible=False)
 
 		# plot cardinal directions
@@ -299,13 +303,17 @@ class LoonSim:
 		N_test = 200
 		p_test = np.zeros([N_test, 3])
 		z_test = np.linspace(0.0, 30000.0, N_test)
-		p_test[:,0] = lats[0] * np.ones(N_test)
-		p_test[:,1] = lons[0] * np.ones(N_test)
+		p_test[:,0] = lats[-1] * np.ones(N_test)
+		p_test[:,1] = lons[-1] * np.ones(N_test)
 		p_test[:,2] = z_test
 		if naive:
 			pass
 		else:
+			# s1 = self.pathplanner.planner.vx_estimator.plot_current(self.ax_latlon, s=100, c='r')
+			# s2 = self.pathplanner.planner.vy_estimator.plot_current(self.ax_latlon, s=200, c='g')
 			vlat_test, vlon_test, std_x, std_y = self.pathplanner.planner.predict(p_test.T)
+			# s3 = self.pathplanner.planner.vx_estimator.plot_current(self.ax_latlon, s=300, c='r')
+			# s4 = self.pathplanner.planner.vy_estimator.plot_current(self.ax_latlon, s=400, c='g')
 			vlat_test = np.squeeze(vlat_test)
 			vlon_test = np.squeeze(vlon_test)
 			mag_test = np.sqrt(vlat_test**2 + vlon_test**2)
@@ -382,7 +390,8 @@ class LoonSim:
 			self.pathplanner.planner.plot(ax=self.ax_plan)
 		dir_profile_truth, = self.ax_alt_dir.plot(dir_truth % 360, z_test, c='grey')
 		mag_profile_truth, = self.ax_alt_mag.plot(mag_truth, z_test, c='grey')
-		self.ax_latlon.plot(lons, lats, c='grey')
+		self.ax_latlon.plot(lons, lats, c=np.ones(3)*0.2)
+		handles = self.pathplanner.planner.plot_paths(ax=self.ax_latlon, p=self.loon.get_pos())
 
 		# LEGEND
 		self.ax_cost.legend([dist_hist, avg_dist_hist, avg_ctrl_hist],
@@ -402,6 +411,8 @@ class LoonSim:
 		else:
 			prev_alt = self.ax_alt_jets.scatter(-1, alts[-1], c='k')
 
+		s5, s6, s7, r5, r6, r7 = self.pathplanner.planner.vx_estimator.plot(self.ax_latlon)
+
 		# SETP
 		plt.setp(self.ax_alt_jets.get_yticklabels(), visible=False)
 		plt.setp(self.ax_alt_dir.get_yticklabels(), visible=False)
@@ -417,7 +428,7 @@ class LoonSim:
 		# YLIM
 		self.ax_latlon.set_ylim([-100,100])
 		self.ax_alt_mag.set_ylim([0,30])
-		self.ax_cost.set_ylim([0, 100])
+		self.ax_cost.set_ylim([0, 150])
 
 		# XLABEL
 		self.ax_latlon.set_xlabel('x position [km]')
@@ -458,6 +469,7 @@ class LoonSim:
 		dir_profile.remove()
 		mag_profile.remove()
 		rects.remove()
+		rects_expectation.remove()
 		prev_latlon.remove()
 		prev_alt.remove()
 		cards.remove()
@@ -469,6 +481,18 @@ class LoonSim:
 		all_stdx_hist.remove()
 		all_stdy_hist.remove()
 		avg_stdy_hist.remove()
+		# s1.remove()
+		# s2.remove()
+		# s3.remove()
+		# s4.remove()
+		s5.remove()
+		s6.remove()
+		s7.remove()
+		r5.remove()
+		r6.remove()
+		r7.remove()
+		for h in handles:
+			h.remove()
 
 		print('\tavg dist, avg ctrl, time:')
 		print('\t\t' + str(avg_dists[-1]) + "\t" + str(avg_d_alt[-1]) + "\t" + str(all_t[-1]/3600.0))

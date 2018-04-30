@@ -3,9 +3,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
 from cvxopt import matrix, solvers
+import copy
 
 from pandas import DataFrame
 from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.patches import Rectangle, Arrow
+from matplotlib.collections import PatchCollection
 
 import os, sys, inspect
 sys.path.insert(1, os.path.join(sys.path[0],'..'))
@@ -20,8 +23,8 @@ class JetStream:
         self.max_alt = parsekw(kwargs, 'max_alt', 0)
         self.magnitude = parsekw(kwargs, 'magnitude', 0)
         self.direction = parsekw(kwargs, 'direction', 0)
-        vx = self.magnitude * np.cos(direction)
-        vy = self.magnitude * np.sin(direction)
+        vx = self.magnitude * np.cos(self.direction)
+        vy = self.magnitude * np.sin(self.direction)
         v = np.array([vx, vy])
         self.v = v
 
@@ -377,13 +380,18 @@ class VarThresholdIdentifier2(JetStreamIdentifier):
         threshold = parsekw(kwargs, 'threshold', 0.005)
         streamsize = parsekw(kwargs, 'streamsize', 15)
         expectation = parsekw(kwargs, 'expectation', False)
+        # print("generating dict")
         self.__generate_dict__(**kwargs)               # store data in a dictionary indexed by altitude
+        # print("clustering")
         if expectation:
             self.__cluster__(threshold)             # cluster data into sets of low variance
         else:
             self.__cluster__(threshold * 10)             # cluster data into sets of low variance
+        # print("identifying")
         self.__identify_streams__(streamsize)   # identify large clusters
+        # print("classifying")
         self.__classify_streams__()             # assign each stream an average altitude, magnitude, and direction
+        solvers.options['show_progress'] = False
 
     def __generate_dict__(self, *args, **kwargs):
         vx = parsekw(kwargs, 'vx', None)
@@ -443,9 +451,12 @@ class VarThresholdIdentifier2(JetStreamIdentifier):
             # OR if we are at the end of our data...
             at_the_end = (i == len(dir_vals)-1)
             # additional_var += std_vals[i]**2
-            n_dir_samples = 100
-            dir_samples = np.random.normal(dir_vals[i], std_vals[i], n_dir_samples)
-            too_wild = (np.var(np.append(cluster_vals,dir_samples)) > threshold)
+            n_dir_samples = 10
+            dir_samples = list(np.random.normal(dir_vals[i], std_vals[i], n_dir_samples))
+            # too_wild = (np.var(np.append(cluster_vals,dir_samples)) > threshold)
+            cluster_vals.extend(dir_samples)
+            too_wild = np.var(cluster_vals) > threshold
+            # too_wild = pyutils.combined_var(cluster_vals, dir_samples) > threshold
             if too_wild or at_the_end:
                 # Store the altitudes sampled in this cluster into the clusters
                 # dictionary, indexed by the order in which we added the clusters
@@ -457,13 +468,15 @@ class VarThresholdIdentifier2(JetStreamIdentifier):
                 cluster = [alt_vals[i]]
                 # Reset the local variable cluster_values to hold only the most
                 # recent direction sampled
-                cluster_vals = [dir_samples]
+                cluster_vals = dir_samples
                 # additional_var = 0.0
             else:
                 # Add the most recently sampled altitude to the local variable cluster
-                cluster = np.append(cluster, alt_vals[i])
+                # cluster = np.append(cluster, alt_vals[i])
+                cluster.append(alt_vals[i])
                 # Add the most recently sampled direction to the local variable cluster_values
-                cluster_vals = np.append(cluster_vals, dir_samples)
+                # cluster_vals = np.append(cluster_vals, dir_samples)
+                # cluster_vals.extend(dir_samples)
             # Label this data point as belonging to this cluster.
             # cluster_labels holds the altitude, magnitude, direction, and
             # cluster ID of each data point in no particular order
@@ -477,7 +490,8 @@ class VarThresholdIdentifier2(JetStreamIdentifier):
             # If the cluster is large enough...
             if len(self.clusters[c]) > streamsize:
                 # Add the cluster to the jetstreams
-                jetstreams = np.append(jetstreams,c)
+                # jetstreams = np.append(jetstreams,c)
+                jetstreams.append(c)
         # Store the jetstreams we identified
         self.stream_ids = np.array(jetstreams)
 
@@ -546,7 +560,7 @@ class VarThresholdIdentifier2(JetStreamIdentifier):
             if z > jet.min_alt and z < jet.max_alt:
                 # Return this jetstream
                 return jet
-        print("Jetstream not found. Can't return anything.")
+        # print("Jetstream not found. Can't return anything.")
         return_jet = JetStream( avg_alt=0,
                                 min_alt=0,
                                 max_alt=0,
@@ -580,10 +594,28 @@ class VarThresholdIdentifier2(JetStreamIdentifier):
                 print("No adjacent jetstream in requested direction. Returning current jetstream")
         return adjacent_jetstream
 
-    def plot(self):
+    def __plot__(self):
         print(self.n_clusters)
         f, (a1, a2, a3) = plt.subplots(1, 3, sharey=True)
         a1.scatter( self.cluster_labels[:,3], self.cluster_labels[:,0], c = self.cluster_labels[:,3]%9, cmap='Set1')
         a1.scatter( self.stream_ids, -100.0*np.ones(len(self.stream_ids)))
         a2.scatter( self.cluster_labels[:,2], self.cluster_labels[:,0], c = self.cluster_labels[:,3]%9, cmap='Set1')
         a3.scatter( self.cluster_labels[:,1], self.cluster_labels[:,0], c = self.cluster_labels[:,3]%9, cmap='Set1')
+
+    def plot(self, ax, **kwargs):
+        width = parsekw(kwargs, 'width', 0.)
+        left = parsekw(kwargs, 'left', 0.)
+        patches = []
+        for jet in self.jetstreams.values():
+            height = (jet.max_alt - jet.min_alt)*1e-3
+            bottom = jet.min_alt*1e-3
+            direction = jet.direction
+            magnitude = 1e0 * np.log(jet.magnitude) / 2.
+            dlon = magnitude * np.sin(direction)
+            dlat = magnitude * np.cos(direction)
+            rect = Rectangle(np.array([left,bottom]), width, height, facecolor='k', alpha=0.3)
+            arr = Arrow(left+width/2., jet.avg_alt*1e-3, dlon, dlat, 1e0*0.7, facecolor='k', alpha=0.3)
+            patches.append(rect)
+            patches.append(arr)
+        collection = PatchCollection(patches, alpha=0.3, facecolor='k')
+        return ax.add_collection(collection)

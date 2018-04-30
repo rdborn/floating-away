@@ -1,3 +1,22 @@
+Data I want saved:
+- Time
+- Balloon position
+- True wind velocity
+- Estimated wind velocity
+- Uncertainty in estimated wind velocity
+- Whether we are sampling or not
+- Whether we are planning nominally or not
+- Control effort (ascent rate)
+
+Plots I want to make:
+- Average distance over time
+- Average velocity quality over time
+- Average planning cost over time
+- Total number of samples over time
+- Uncertainty in position over time
+- Fuel usage over time
+
+
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 SIMULATION STRUCTURE

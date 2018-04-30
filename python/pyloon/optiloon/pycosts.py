@@ -8,16 +8,16 @@ from pyutils.pyutils import parsekw, hash3d, hash4d, rng, downsize
 from pyutils import pyutils
 
 def J_position(*args, **kwargs):
-    p = parsekw(kwargs, 'p', None)
-    pstar = parsekw(kwargs, 'pstar', None)
+    p = np.array(parsekw(kwargs, 'p', None))
+    pstar = np.array(parsekw(kwargs, 'pstar', None))
 
     J_position = np.linalg.norm(p - pstar)
     return J_position
 
 def J_velocity(*args, **kwargs):
-    p = parsekw(kwargs, 'p', None)
-    pstar = parsekw(kwargs, 'pstar', None)
-    pdot = parsekw(kwargs, 'pdot', None)
+    p = np.array(parsekw(kwargs, 'p', None))
+    pstar = np.array(parsekw(kwargs, 'pstar', None))
+    pdot = np.array(parsekw(kwargs, 'pdot', None))
 
     pdothat = pdot / np.linalg.norm(pdot)
     phi = p - pstar
@@ -27,12 +27,12 @@ def J_velocity(*args, **kwargs):
     return J_velocity
 
 def J_acceleration(*args, **kwargs):
-    p = parsekw(kwargs, 'p', None)
-    pstar = parsekw(kwargs, 'pstar', None)
-    pdot = parsekw(kwargs, 'pdot', None)
+    p = np.array(parsekw(kwargs, 'p', None))
+    pstar = np.array(parsekw(kwargs, 'pstar', None))
+    pdot = np.array(parsekw(kwargs, 'pdot', None))
 
     norm_p = np.linalg.norm(p)
-    phat = p / norm_p if norm_phi > 0 else phi
+    phat = p / norm_p if norm_p > 0 else p
     phidot = np.dot(phat, pdot) * phat
     phiddot = (((np.linalg.norm(pdot)**2 - 2 * np.linalg.norm(phidot)**2)) * phat + np.linalg.norm(phidot) * pdot)
     phiddot = phiddot / norm_p if norm_p > 0 else phiddot
@@ -40,10 +40,10 @@ def J_acceleration(*args, **kwargs):
     return J_acceleration
 
 def range_J(cost_function, n, *args, **kwargs):
-    p_mu = parsekw(kwargs, 'p', None)
-    pdot_mu = parsekw(kwargs, 'pdot', None)
-    p_std = parsekw(kwargs, 'pstd', 1e-6)
-    pdot_std = parsekw(kwargs, 'pdotstd', 1e-6)
+    p_mu = np.array(parsekw(kwargs, 'p', None))
+    pdot_mu = np.array(parsekw(kwargs, 'pdot', None))
+    p_std = np.array(parsekw(kwargs, 'pstd', 1e-6))
+    pdot_std = np.array(parsekw(kwargs, 'pdotstd', 1e-6))
     J = np.zeros(n)
     for i in range(n):
         kwargs['p'] = np.random.normal(p_mu, p_std)
