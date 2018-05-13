@@ -1,3 +1,94 @@
+def r(t):
+  return t*np.pi/180.
+
+def fs(x, a):
+    a00 = a[0]
+    a11 = a[1]
+    a12 = a[2]
+    a13 = a[3]
+    a21 = a[4]
+    a22 = a[5]
+    a23 = a[6]
+    t1 = a11 / (1. + np.exp(a12 * (x - a13)))
+    t2 = a21 / (1. + np.exp(a22 * (x - a23)))
+    fs = (t1 + t2) / a00
+    return fs
+
+def fa(theta1, theta2, aa):
+    del_fs = 0. # TODO
+    fs1 = fs(theta1 / np.pi, aa)
+    fs2 = fs(theta2 / np.pi, aa)
+    fa = fs1 + ((np.pi - theta2) / np.pi) * fs2 - del_fs
+    return fa
+
+def pfa(aa, ax):
+  theta1 = np.linspace(120, 360, 40)
+  theta2 = np.linspace(0, 180, 40)
+  #fig = plt.figure()
+  #ax = plt.gca()
+  x = []
+  y = []
+  z = []
+  for t1 in theta1:
+    for t2 in theta2:
+      constraint1 = t2 > (180. - 0.5 * t1)
+      constraint2 = t2 < t1
+      constraint3 = t2 < (360. - t1)
+      if constraint1 and constraint2 and constraint3:
+        c = fa(r(t1), r(t2), aa)
+        #c = fa(t1, t2, aa)
+        x.append(t2)
+        y.append(t1)
+        z.append(c)
+  z = z - np.min(z)
+  z = z / np.max(z)
+  for i in range(len(z)):
+    ax.scatter(x[i], y[i], c=z[i]*np.ones(3))
+  #plt.show()
+
+def _pfa(aa):
+  theta1 = np.linspace(120, 360, 40)
+  theta2 = np.linspace(0, 180, 40)
+  fig = plt.figure()
+  ax = plt.gca()
+  x = []
+  y = []
+  z = []
+  for t1 in theta1:
+    for t2 in theta2:
+      constraint1 = t2 > (180. - 0.5 * t1)
+      constraint2 = t2 < t1
+      constraint3 = t2 < (360. - t1)
+      if constraint1 and constraint2 and constraint3:
+        c = fa(r(t1), r(t2), aa)
+        #c = fa(t1, t2, aa)
+        x.append(t2)
+        y.append(t1)
+        z.append(c)
+  z = z - np.min(z)
+  z = z / np.max(z)
+  ax.scatter(x, y, c=z, s=10, cmap='jet')
+  #for i in range(len(z)):
+    #ax.scatter(x[i], y[i], c=z[i]*np.ones(3))
+  plt.show()
+
+def paa(i, j, n):
+  aa = [1., 1., 4., 1., -2., 0.1, 0.1]
+  aai = np.logspace(-6,6,n)#*np.pi/180.
+  aaj = np.logspace(-6,6,n)#*np.pi/180.
+  fig = plt.figure()
+  for q in range(n):
+    aa[i] = aai[q]
+    for r in range(n):
+      aa[j] = aaj[r]
+      print(q*n+r+1)
+      print(aa)
+      ax = fig.add_subplot(n, n, q*n+r+1)
+      pfa(aa, ax)
+  plt.show()
+
+
+
 Data I want saved:
 - Time
 - Balloon position

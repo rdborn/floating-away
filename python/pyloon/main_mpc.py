@@ -15,10 +15,12 @@ from pyutils.pyutils import parsekw
 # Choose the planner algorithm and estimator scheme
 # options: montecarlo, mpc, mpcfast, ldp, wap, pic, naive
 planner = 'mpcfast'
+# planner = 'molchanov'
 alwayssample = False
 dontsample = True
-samplingtime = 1*300
-gamma = np.array([1.,1e5,0.,0.,0.,0.]) # tuning parameter for cost function (lower = care more about pos, less about vel)
+samplingtime = 0.1*300
+# gamma = np.array([1.,1e5,0.,0.,0.,0.]) # tuning parameter for cost function (lower = care more about pos, less about vel)
+gamma = np.array([0.,1.,0.,0.,0.,0.]) # tuning parameter for cost function (lower = care more about pos, less about vel)
 while alwayssample and gamma[-1] != 0:
 	print("WOAH you sure about that?")
 # options: gpfe, knn1dgp, multi1dgp
@@ -46,11 +48,11 @@ lonspan =	140000.0
 
 # Upper and lower altitude bounds for the balloon
 lower = 5000.0
-upper = 22000.0
+upper = 30000.0
 
 # IF planner = 'naive'
-resamplethreshold = 500000
-trusttime = 6
+resamplethreshold = 2000000
+trusttime = 12
 
 # Min and max altitude for which there is flow data
 zmin = 0.0
@@ -67,7 +69,7 @@ threshold =		0.005
 # Balloon initial position
 xi = 0.0
 yi = 0.0
-zi = 10.0
+zi = 16000.0
 
 # Simulation sampling frequency
 Fs = 0.2
@@ -281,34 +283,50 @@ while True:
 							pstar=pstar,
 							depth=depth,
 							gamma=gamma)
-			if LS.off_nominal():
-				print("Off-nominal Policy:")
-				print("\t" + str(pol))
-			else:
-				pol = pol[1:] if len(pol) > 1 else pol
-				print("Policy:")
-				print("\t" + str(pol))
-			if plot:
-				if plottofile:
-					LS.plot(outfile=out_file, naive=(planner=='naive'))
+			if planner == 'naive':
+				if pol[0] < 0:
+					# Figure out if we should go up or down first
+					pos = LS.loon.get_pos()
+					if abs(pos[2] - np.min(points_to_sample)) < abs(pos[2] - np.max(points_to_sample)):
+						points_to_sample = np.sort(points_to_sample)
+					else:
+						points_to_sample = np.sort(points_to_sample)[::-1]
+					# Go to the edge of the air column
+					# Go to the other edge of the air column, sampling the field along the way
+					for sample_alt in points_to_sample:
+						LS = get_there(LS, sample_alt, u, T)
+						LS.sample()
+					LS.pathplanner.planner.retrain()
 				else:
-					LS.plot(naive=(planner=='naive'))
-			# If the policy was negative, that was a sign from the naive path planner
-			# that it needs to retrain, so we need to sample the air column
-			if pol[0] < 0:
-				# Figure out if we should go up or down first
-				pos = LS.loon.get_pos()
-				if abs(pos[2] - np.min(points_to_sample)) < abs(pos[2] - np.max(points_to_sample)):
-					points_to_sample = np.sort(points_to_sample)
+					for i in range(N):
+						if i >= len(pol):
+							break
+						print("Moving to altitude:")
+						print("\t" + str(np.int(pol[i])))
+						if LS.off_nominal():
+							entropy_threshold = 2.
+							if pol[1] > entropy_threshold:
+								LS = get_there(LS, pol[i], u, T, exact=True)
+								LS.sample()
+							else:
+								LS = get_there(LS, pol[i], u, T, exact=False)
+						else:
+							LS = get_there(LS, pol[i], u, T, exact=False)
+			elif planner == 'pic':
+				u = pol
+				dt = 0.
+				T = 180.
+				while (T - dt) > 0.0:
+					LS.propogate(u, alwayssample=alwayssample, dontsample=dontsample)
+					dt += 1.0 / LS.loon.Fs
+			elif planner == 'mpcfast':
+				if LS.off_nominal():
+					print("Off-nominal Policy:")
+					print("\t" + str(pol))
 				else:
-					points_to_sample = np.sort(points_to_sample)[::-1]
-				# Go to the edge of the air column
-				# Go to the other edge of the air column, sampling the field along the way
-				for sample_alt in points_to_sample:
-					LS = get_there(LS, sample_alt, u, T)
-					LS.sample()
-				LS.pathplanner.planner.retrain()
-			else:
+					pol = pol[1:] if len(pol) > 1 else pol
+					print("Policy:")
+					print("\t" + str(pol))
 				for i in range(N):
 					if i >= len(pol):
 						break
@@ -323,6 +341,30 @@ while True:
 							LS = get_there(LS, pol[i], u, T, exact=False)
 					else:
 						LS = get_there(LS, pol[i], u, T, exact=False)
+			elif planner == 'molchanov':
+				print(pol)
+				if pol[0] < 0:
+					u = 0.
+					dt = 0.
+					T = 180.
+					while (T - dt) > 0.0:
+						LS.propogate(u, alwayssample=alwayssample, dontsample=dontsample)
+						dt += 1.0 / LS.loon.Fs
+				elif len(pol) > 1:
+					for i in range(len(pol)):
+						print("Moving to altitude:")
+						print("\t" + str(np.int(pol[i])))
+						LS = get_there(LS, pol[i], u, T, exact=True)
+						LS.sample()
+					LS.pathplanner.planner.retrain()
+				else:
+					LS = get_there(LS, pol[0], u, T, exact=True)
+
+			if plot:
+				if plottofile:
+					LS.plot(outfile=out_file, planner=planner)
+				else:
+					LS.plot(planner=planner)
 			pos = LS.loon.get_pos()
 			print("New position:")
 			print("\t(" + str(np.int(pos[0])) + ", " + str(np.int(pos[1])) + ", " + str(np.int(pos[2])) + ")")
@@ -331,9 +373,10 @@ while True:
 			all_lons = np.array(LS.loon_history['y'][:])
 			all_dists = np.sqrt(all_lats**2 + all_lons**2)
 			all_t = LS.dt * np.array(range(len(all_dists)))
-			avg_dists = np.cumsum(all_dists) / all_t
-			if avg_dists[-1] > 20000:
-				break
+			# avg_dists = np.mean(all_dists) #np.cumsum(all_dists) / all_t
+			# TODO: make a better stopping criteria
+			# if avg_dists[-1] > 20000:
+				# break
 
 		# Write history to csv file
 		t = LS.loon_history['t'][:]

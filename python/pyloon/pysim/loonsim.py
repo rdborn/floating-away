@@ -119,17 +119,20 @@ class LoonSim:
 		return "LOON POS: " + str(self.loon) + "\n" + "FLOW: mag: " + str(mag) + ", dir: " + str(angle) + "\n"
 
 	def plan(self, *args, **kwargs):
+		retrain = False
 		if (self.tcurr - self.tlast) / 3600.0 > self.environment.hr_inc:
 			if self.pathplanner.planner.fieldestimator != 'naive':
 				self.pathplanner.planner.retrain(field=self.environment.wind, p=self.loon.get_pos())
 				self.tlast += (self.environment.hr_inc * 3600.0)
+				retrain = True
 		return self.pathplanner.planner.plan(	loon=self.loon,
 					                            u=kwargs.get('u'),
 					                            T=kwargs.get('T'),
 					                            pstar=kwargs.get('pstar'),
 					                            depth=kwargs.get('depth'),
 												tcurr=self.tcurr,
-												gamma=kwargs.get('gamma'))
+												gamma=kwargs.get('gamma'),
+												retrain=retrain)
 
 	def propogate(self, u, **kwargs):
 		"""
@@ -161,8 +164,14 @@ class LoonSim:
 		self.trecord += self.dt
 
 		if self.trecord >= 60.0:
+			if self.pathplanner.planner.type == 'molchanov':
+				vx_pred = [0.]
+				vy_pred = [0.]
+				stdx = [0.]
+				stdy = [0.]
+			else:
+				vx_pred, vy_pred, stdx, stdy = self.pathplanner.planner.predict(p)
 			self.trecord = 0.
-			vx_pred, vy_pred, stdx, stdy = self.pathplanner.planner.predict(p)
 			loon_record = DataFrame([[self.tcurr,
 									self.loon.x,
 									self.loon.y,
@@ -226,7 +235,7 @@ class LoonSim:
 
 	def plot(self, *args, **kwargs):
 		out_file = parsekw(kwargs, 'outfile', 'ERR_NO_FILE')
-		naive = parsekw(kwargs, 'naive', False)
+		planner = parsekw(kwargs, 'planner', 'mpcfast')
 
 		lats = np.array(self.loon_history['x'][self.prev_plot_idx:])
 		lons = np.array(self.loon_history['y'][self.prev_plot_idx:])
@@ -247,13 +256,20 @@ class LoonSim:
 		all_dists = np.sqrt(all_lats**2 + all_lons**2)
 		# all_t = self.dt * np.array(range(len(all_dists)))
 		all_t = 60. * np.array(range(len(all_dists)))
-		avg_dists = np.cumsum(all_dists) / all_t
+		avg_dists = np.mean(all_dists) #np.cumsum(all_dists) / all_t
+
+		avg_dists = np.zeros(len(dists))
+		std_dists = np.zeros(len(dists))
+		for i in range(len(dists)):
+			avg_dists[i] = np.mean(all_dists[:(self.prev_plot_idx + i)])
+			std_dists[i] = np.std(all_dists[:(self.prev_plot_idx + i)])
+
 		avg_d_alt = np.cumsum(abs(all_alts[1:] - all_alts[:-1]))
 		avg_d_alt = np.append(np.zeros(1), avg_d_alt) / all_t
 		avg_stdxs = np.cumsum(all_stdxs**2) / all_t
 		avg_stdys = np.cumsum(all_stdys**2) / all_t
 		# Get rid of the NaN from dividing by initial time = 0
-		avg_dists[0] = 0
+		# avg_dists[0] = 0
 		avg_d_alt[0] = 0
 		avg_stdxs[0] = 0
 		avg_stdys[0] = 0
@@ -263,7 +279,7 @@ class LoonSim:
 		self.prev_plot_idx = len(self.loon_history['x']) - 1
 
 		patches = []
-		if naive:
+		if planner == 'naive':
 			sampled_alts = self.pathplanner.planner.data[:,0]
 			sampled_vxs = self.pathplanner.planner.data[:,1]
 			sampled_vys = self.pathplanner.planner.data[:,2]
@@ -276,7 +292,7 @@ class LoonSim:
 				patches.append(arr)
 			collection = PatchCollection(patches, alpha=0.3, facecolor='k')
 			rects = self.ax_alt_jets.add_collection(collection)
-		else:
+		elif planner == 'mpcfast':
 			# Plot jetstreams
 			rects = self.pathplanner.planner.jets.plot(self.ax_alt_jets, width=2., left=-2.1)
 			rects_expectation = self.pathplanner.planner.jets_expectation.plot(self.ax_alt_jets, width=2., left=0.1)
@@ -306,9 +322,7 @@ class LoonSim:
 		p_test[:,0] = lats[-1] * np.ones(N_test)
 		p_test[:,1] = lons[-1] * np.ones(N_test)
 		p_test[:,2] = z_test
-		if naive:
-			pass
-		else:
+		if planner == 'mpcfast':
 			# s1 = self.pathplanner.planner.vx_estimator.plot_current(self.ax_latlon, s=100, c='r')
 			# s2 = self.pathplanner.planner.vy_estimator.plot_current(self.ax_latlon, s=200, c='g')
 			vlat_test, vlon_test, std_x, std_y = self.pathplanner.planner.predict(p_test.T)
@@ -371,16 +385,18 @@ class LoonSim:
 
 		# PLOT
 		avg_ctrl_hist, = self.ax_cost.plot(all_t/3600.0, avg_d_alt*1e1, c=0.3*np.ones(3), linestyle='dashed')
-		avg_dist_hist, = self.ax_cost.plot(all_t/3600.0, avg_dists*1e-2, c=0.6*np.ones(3))
+		avg_dist_hist, = self.ax_cost.plot(t/3600.0, avg_dists*1e-3, c=0.6*np.ones(3))
+		avg_dist_upper, = self.ax_cost.plot(t/3600.0, (avg_dists+std_dists)*1e-3, c=0.6*np.ones(3), linestyle=':')
+		avg_dist_lower, = self.ax_cost.plot(t/3600.0, (avg_dists-std_dists)*1e-3, c=0.6*np.ones(3), linestyle=':')
 		avg_stdx_hist, = self.ax_cost.plot(all_t/3600.0, avg_stdxs*1e-1, c='b', linestyle='dashed')
 		avg_stdy_hist, = self.ax_cost.plot(all_t/3600.0, avg_stdys*1e-1, c='r', linestyle='dashed')
 		all_stdx_hist, = self.ax_cost.plot(all_t/3600.0, all_stdxs*1e-2, c='b')
 		all_stdy_hist, = self.ax_cost.plot(all_t/3600.0, all_stdys*1e-2, c='r')
 		dist_hist, = self.ax_cost.plot(t/3600.0, dists*1e-3, c='k')
-		if naive:
+		if planner == 'naive':
 			dir_profile = self.ax_alt_dir.scatter((sampled_dirs * 180.0 / np.pi) % 360, sampled_alts*1e-3, c='k')
 			mag_profile = self.ax_alt_mag.scatter(sampled_mags, sampled_alts*1e-3, c='k')
-		else:
+		elif planner == 'mpcfast':
 			dir_profile, = self.ax_alt_dir.plot(dir_test, z_test, c='k')
 			dir_upper, = self.ax_alt_dir.plot(dir_upper, z_test, c='k', linestyle='dashed')
 			dir_lower, = self.ax_alt_dir.plot(dir_lower, z_test, c='k', linestyle='dotted')
@@ -388,18 +404,16 @@ class LoonSim:
 			mag_upper, = self.ax_alt_mag.plot(mag_test_upper, z_test, c='k', linestyle='dashed')
 			mag_lower, = self.ax_alt_mag.plot(mag_test_lower, z_test, c='k', linestyle='dashed')
 			self.pathplanner.planner.plot(ax=self.ax_plan)
+			handles = self.pathplanner.planner.plot_paths(ax=self.ax_latlon, p=self.loon.get_pos())
 		dir_profile_truth, = self.ax_alt_dir.plot(dir_truth % 360, z_test, c='grey')
 		mag_profile_truth, = self.ax_alt_mag.plot(mag_truth, z_test, c='grey')
 		self.ax_latlon.plot(lons, lats, c=np.ones(3)*0.2)
-		handles = self.pathplanner.planner.plot_paths(ax=self.ax_latlon, p=self.loon.get_pos())
 
 		# LEGEND
 		self.ax_cost.legend([dist_hist, avg_dist_hist, avg_ctrl_hist],
 							['Dist from set point', 'Mean dist from set point', 'Mean vertical velocity'],
 							loc=1)
-		if naive:
-			pass
-		else:
+		if planner == 'mpcfast':
 			self.ax_alt_mag.legend([mag_profile, mag_upper, mag_profile_truth],
 									['Mean', 'Std Dev', 'Truth'],
 									loc=4)
@@ -411,7 +425,8 @@ class LoonSim:
 		else:
 			prev_alt = self.ax_alt_jets.scatter(-1, alts[-1], c='k')
 
-		s5, s6, s7, r5, r6, r7 = self.pathplanner.planner.vx_estimator.plot(self.ax_latlon)
+		if self.pathplanner.planner.type != 'molchanov':
+			s5, s6, s7, r5, r6, r7 = self.pathplanner.planner.vx_estimator.plot(self.ax_latlon)
 
 		# SETP
 		plt.setp(self.ax_alt_jets.get_yticklabels(), visible=False)
@@ -459,23 +474,19 @@ class LoonSim:
 			self.fancy_plot.set_size_inches((18,10), forward=True)
 			self.fancy_plot.savefig(out_file, bbox_inches='tight')
 
-		if naive:
-			pass
-		else:
+		if planner == 'mpcfast':
 			dir_upper.remove()
 			dir_lower.remove()
 			mag_upper.remove()
 			mag_lower.remove()
-		dir_profile.remove()
-		mag_profile.remove()
-		rects.remove()
-		rects_expectation.remove()
+			dir_profile.remove()
+			mag_profile.remove()
 		prev_latlon.remove()
 		prev_alt.remove()
 		cards.remove()
 		dir_profile_truth.remove()
 		mag_profile_truth.remove()
-		avg_dist_hist.remove()
+		# avg_dist_hist.remove()
 		avg_ctrl_hist.remove()
 		avg_stdx_hist.remove()
 		all_stdx_hist.remove()
@@ -485,14 +496,18 @@ class LoonSim:
 		# s2.remove()
 		# s3.remove()
 		# s4.remove()
-		s5.remove()
-		s6.remove()
-		s7.remove()
-		r5.remove()
-		r6.remove()
-		r7.remove()
-		for h in handles:
-			h.remove()
+		if self.pathplanner.planner.type != 'molchanov':
+			s5.remove()
+			s6.remove()
+			s7.remove()
+			r5.remove()
+			r6.remove()
+			r7.remove()
+		if planner == 'mpcfast':
+			rects.remove()
+			rects_expectation.remove()
+			for h in handles:
+				h.remove()
 
 		print('\tavg dist, avg ctrl, time:')
 		print('\t\t' + str(avg_dists[-1]) + "\t" + str(avg_d_alt[-1]) + "\t" + str(all_t[-1]/3600.0))

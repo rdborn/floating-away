@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from sklearn.gaussian_process.kernels import RBF, Matern, WhiteKernel, ConstantKernel as C
 import copy
+import itertools
 
 import os, sys, inspect
 sys.path.insert(1, os.path.join(sys.path[0],'..'))
@@ -15,60 +16,6 @@ from optiloon.pycosts import J_position as Jp
 from optiloon.pycosts import J_velocity as Jv
 from optiloon.pycosts import J_acceleration as Ja
 from optiloon.pycosts import range_J
-
-class NaivePlanner:
-    def __init__(self, *args, **kwargs):
-        self.last_sounding_position = np.inf * np.ones(2)
-        self.last_sounding_time = -np.inf
-        self.threshold = parsekw(kwargs, 'resamplethreshold', 30000)
-        self.trusttime = parsekw(kwargs, 'trusttime', 3)
-        self.sampled_points = []
-        self.tlast = 0.0
-        self.fieldestimator = 'naive'
-
-    def add_sample(self, *args, **kwargs):
-        p = parsekw(kwargs, 'p', None)
-        magnitude = parsekw(kwargs, 'magnitude', 0.0)
-        direction = parsekw(kwargs, 'direction', 0.0)
-        if np.array(p == None).any():
-            print("No point supplied, can't sample")
-            return -1
-        vx = magnitude * np.cos(direction)
-        vy = magnitude * np.sin(direction)
-        val = np.array([p[2], vx, vy])
-        self.sampled_points.append(val)
-
-    def retrain(self, *args, **kwargs):
-        self.data = np.array(self.sampled_points)
-        self.sampled_points = []
-
-    def plan(self, *args, **kwargs):
-        pstar = parsekw(kwargs, 'pstar', np.zeros(2))
-        loon = parsekw(kwargs, 'loon', None)
-        tcurr = parsekw(kwargs, 'tcurr', -1)
-        gamma = parsekw(kwargs, 'gamma', 1e7)
-        curr_pos = np.array(loon.get_pos()[0:2])
-        last_pos = self.last_sounding_position
-        out_of_range = (np.linalg.norm(curr_pos - last_pos) > self.threshold)
-        been_too_long = ((tcurr - self.tlast) / 3600) > self.trusttime
-        need_to_resample = out_of_range or been_too_long
-        if need_to_resample:
-            self.tlast = tcurr
-            self.last_sounding_position = curr_pos
-            return np.array([-1])
-        min_J = np.inf
-        best_alt = 0
-        for i, d in enumerate(self.data):
-            alt = d[0]
-            p = curr_pos[0:2]
-            pdot = d[1:]
-            J_pos = Jp(p=p, pstar=pstar[0:2])
-            J_vel = Jv(p=p, pstar=pstar[0:2], pdot=pdot)
-            J = np.log(J_pos * (J_vel * gamma + 1) + 1)
-            if J < min_J:
-                min_J = J
-                best_alt = alt
-        return np.array([best_alt])
 
 class LoonPathPlanner:
     def __init__(self, *args, **kwargs):
@@ -87,6 +34,7 @@ class LoonPathPlanner:
         self.sampled_points = []
         self.alts_to_sample = np.array([])
         self.train(field=field)
+        self.off_nominal = False
 
     def add_sample(self, *args, **kwargs):
         p = parsekw(kwargs, 'p', None)
@@ -208,6 +156,287 @@ class LoonPathPlanner:
         mean_fx = self.vx_estimator.predict(p=p_pred, return_std=False)
         mean_fy = self.vy_estimator.predict(p=p_pred, return_std=False)
         return mean_fx, mean_fy
+
+class NaivePlanner(LoonPathPlanner):
+    def __init__(self, *args, **kwargs):
+        self.last_sounding_position = np.inf * np.ones(2)
+        self.last_sounding_time = -np.inf
+        self.threshold = parsekw(kwargs, 'resamplethreshold', 200000)
+        self.trusttime = parsekw(kwargs, 'trusttime', 3)
+        self.points_to_sample = parsekw(kwargs, 'points_to_sample', None)
+        self.sampled_points = []
+        self.fieldestimator = 'naive'
+        self.upper = parsekw(kwargs, 'upper', 30000.)
+        self.lower = parsekw(kwargs, 'lower', 0.)
+
+
+    def add_sample(self, *args, **kwargs):
+        p = parsekw(kwargs, 'p', None)
+        magnitude = parsekw(kwargs, 'magnitude', 0.0)
+        direction = parsekw(kwargs, 'direction', 0.0)
+        if np.array(p == None).any():
+            print("No point supplied, can't sample")
+            return -1
+        vx = magnitude * np.cos(direction)
+        vy = magnitude * np.sin(direction)
+        val = np.array([p[2], vx, vy])
+        self.sampled_points.append(val)
+
+    def retrain(self, *args, **kwargs):
+        self.data = np.array(self.sampled_points)
+        self.sampled_points = []
+
+    def __resample_criteria__(self, *args, **kwargs):
+        loon = parsekw(kwargs, 'loon', None)
+        tcurr = parsekw(kwargs, 'tcurr', -1)
+        curr_pos = np.array(loon.get_pos()[0:2])
+        out_of_range = (np.linalg.norm(curr_pos - self.last_sounding_position) > self.threshold)
+        been_too_long = ((tcurr - self.last_sounding_time) / 3600) > self.trusttime
+        need_to_resample = out_of_range or been_too_long
+        print(self.threshold)
+        print(np.linalg.norm(curr_pos - self.last_sounding_position))
+        return need_to_resample
+
+    def plan(self, *args, **kwargs):
+        pstar = parsekw(kwargs, 'pstar', np.zeros(2))
+        loon = parsekw(kwargs, 'loon', None)
+        tcurr = parsekw(kwargs, 'tcurr', -1)
+        need_to_resample = self.__resample_criteria__(**kwargs)
+        if need_to_resample:
+            self.last_sounding_time = tcurr
+            self.last_sounding_position = np.array(loon.get_pos()[0:2])
+            return np.array(self.points_to_sample)
+        best_alt, best_i, min_J = self.__best_alt__(**kwargs)
+        return np.array([best_alt])
+
+    def __best_alt__(self, *args, **kwargs):
+        loon = parsekw(kwargs, 'loon', None)
+        Jfun = parsekw(kwargs, 'Jfun', Jv)
+        pstar = parsekw(kwargs, 'pstar', np.zeros(2))
+        curr_pos = np.array(loon.get_pos()[0:2])
+        min_J = np.inf
+        best_alt = 0
+        best_i = 0
+        for i, d in enumerate(self.data):
+            alt = d[0]
+            p = curr_pos[0:2]
+            pdot = d[1:]
+            J = Jfun(p=p, pstar=pstar[0:2], pdot=pdot)
+            if J < min_J:
+                min_J = J
+                best_alt = alt
+                best_i = i
+        return best_alt, best_i, min_J
+
+class MolchanovEtAlPlanner(NaivePlanner):
+    def __init__(self, *args, **kwargs):
+        field = parsekw(kwargs, 'field', 0.0)
+        self.upper = parsekw(kwargs, 'upper', 30000.)
+        self.lower = parsekw(kwargs, 'lower', 0.)
+        self.alpha_threshold = parsekw(kwargs, 'alpha_threshold', 0.2)
+        vx, vy, coords = LoonPathPlanner.__parse_field__(self, field)
+        self.__partition__(coords, vx, vy)
+        R, self.idx = self.__R_max__(6)
+        self.altitudes = self.X.values()[0][self.idx]
+        NaivePlanner.__init__(self, trusttime=6, threshold=200000, points_to_sample=self.altitudes)
+        self.type = 'molchanov'
+        self.off_nominal = False
+        self.alpha_prev = np.inf
+        self.just_retrained = False
+        self.prev_pol = -1
+
+    def retrain(self, *args, **kwargs):
+        NaivePlanner.retrain(self, *args, **kwargs)
+        self.just_retrained = True
+
+    def __partition__(self, X, vx, vy):
+        self.locations = dict()
+        self.X = dict()
+        self.vx = dict()
+        self.vy = dict()
+        for i in range(len(X)):
+            xcoord = np.int(X[i][0])
+            ycoord = np.int(X[i][1])
+            zcoord = 0
+            p = np.array([xcoord, ycoord, zcoord])
+            key = hash3d(p)
+            alt = np.int(X[i][2])
+            if key in self.X.keys():
+                self.X[key] = np.append(self.X[key], alt)
+                self.vx[key] = np.append(self.vx[key], vx[i])
+                self.vy[key] = np.append(self.vy[key], vy[i])
+            else:
+                self.X[key] = alt
+                self.vx[key] = vx[i]
+                self.vy[key] = vy[i]
+                self.locations[key] = p
+        for key in self.locations.keys():
+            idx = np.argsort(self.X[key])
+            self.X[key] = self.X[key][idx]
+            self.vx[key] = self.vx[key][idx]
+            self.vy[key] = self.vy[key][idx]
+            idx = np.array(self.X[key] < self.upper, dtype=np.int) \
+                    + np.array(self.X[key] > self.lower, dtype=np.int) == 2
+            self.X[key] = self.X[key][idx]
+            self.vx[key] = self.vx[key][idx]
+            self.vy[key] = self.vy[key][idx]
+
+    def __R_max__(self, n):
+        key = self.X.keys()[0]
+        z = self.X[key]
+        combos = itertools.combinations(range(len(z)), n)
+        idx_max = np.zeros(n)
+        R_min = np.inf
+        for idx in combos:
+            R_i = self.__R__(np.array(idx))
+            if R_i < R_min:
+                R_min = R_i
+                idx_max = np.array(idx)
+                # print("R_min:\t" + str(R_min))
+                # print(np.sort(self.X[key][idx_max]))
+                # print(np.sort(np.arctan(self.vy[key][idx_max], self.vx[key][idx_max])*180/np.pi))
+                # pyutils.breakpoint()
+        print("\tBest altitudes:")
+        alts = np.sort(self.X[key][idx_max])
+        for a in alts:
+            print("\t\t" + str(np.int(a)) + " m")
+        return R_min, idx_max
+
+    def __R__(self, idx):
+        R = 0.
+        for key in self.locations.keys():
+            z = self.X[key][idx]
+            theta = np.arctan2(self.vy[key][idx], self.vx[key][idx])
+            theta1, theta2 = self.__theta_max_2__(z, theta)
+            # print(theta*180/np.pi)
+            fa = self.__fa__(theta1, theta2)
+            R += fa
+            # print(fa)
+        return R
+
+    def __fs__(self, x, a):
+        a00 = a[0]
+        a11 = a[1]
+        a12 = a[2]
+        a13 = a[3]
+        a21 = a[4]
+        a22 = a[5]
+        a23 = a[6]
+        t1 = a11 / (1. + np.exp(a12 * (x - a13)))
+        t2 = a21 / (1. + np.exp(a22 * (x - a23)))
+        fs = (t1 + t2) / a00
+        return fs
+
+    def __fa__(self, theta1, theta2):
+        aa = [1., 1., 4., 1., -2., 0.1, 0.1] # this creates a logistic function that maps as closely as I could manage to the one used in the paper
+        del_fs = self.__fs__(2., aa) + self.__fs__(0, aa) # make fa = 0 when vectors are colinear
+        fs1 = self.__fs__(theta1 / np.pi, aa)
+        fs2 = self.__fs__(theta2 / np.pi, aa)
+        fa = fs1 + ((np.pi - theta2) / np.pi) * fs2 - del_fs
+        return fa
+
+    def __theta_max_2__(self, z, theta):
+        max1_i = np.nan
+        max1_j = np.nan
+        max2_i = np.nan
+        max2_j = np.nan
+        theta_max1 = 0.
+        theta_max2 = 0.
+        for i in range(len(theta)):
+            for j in range(len(theta)):
+                if j > i:
+                    d_theta = abs(theta[i] - theta[j])
+                    if d_theta > theta_max1:
+                        theta_max1 = d_theta
+                        max1_i = i
+                        max1_j = j
+        for i in range(len(theta)):
+            for j in range(len(theta)):
+                if j > i:
+                    d_theta = abs(theta[i] - theta[j])
+                    if d_theta > theta_max2:
+                        if (i != max1_i) or (j != max1_j):
+                            theta_max2 = d_theta
+                            max2_i = i
+                            max2_j = j
+        # print(str(theta_max1*180/np.pi) + "\t" + str(theta[max1_i]*180/np.pi) + "\t" + str(theta[max1_j]*180/np.pi))
+        # print(str(theta_max2*180/np.pi) + "\t" + str(theta[max2_i]*180/np.pi) + "\t" + str(theta[max2_j]*180/np.pi))
+        return theta_max1, theta_max2
+
+    def __F_desired__(self, *args, **kwargs):
+        p = parsekw(kwargs, 'p', None)
+        pstar = parsekw(kwargs, 'pstar', np.zeros(3))
+        phi = np.array(pstar[0:2] - p[0:2])
+        norm_phi = np.linalg.norm(phi)
+        F_desired = phi / norm_phi if norm_phi > 0 else phi
+        return F_desired
+
+    def __alpha__(self, F_desired):
+        Fdnorm = np.linalg.norm(F_desired)
+        Fanorm = np.linalg.norm(self.F_actual)
+        Fdhat = F_desired / Fdnorm if Fdnorm != 0 else F_desired
+        Fahat = self.F_actual / Fanorm if Fanorm != 0 else self.F_actual
+        cos_alpha = np.dot(Fdhat, Fahat)
+        return np.arccos(cos_alpha)
+
+    def __need_new_action__(self, alpha):
+        need_new_action = abs(alpha - self.alpha_prev) > self.alpha_threshold
+        if self.just_retrained:
+            self.just_retrained = False
+            need_new_action = True
+        return need_new_action
+
+    def __best_alt__(self, F_desired):
+        best_alt = 0
+        best_i = 0
+        qmax = -np.inf
+        Fdnorm = np.linalg.norm(F_desired)
+        Fdhat = F_desired / Fdnorm if Fdnorm != 0 else F_desired
+        for i, d in enumerate(self.data):
+            alt = d[0]
+            F_i = d[1:]
+            Finorm = np.linalg.norm(F_i)
+            Fihat = F_i / Finorm if Finorm != 0 else F_i
+            q = np.dot(Fdhat, Fihat)
+            if q > qmax:
+                qmax = q
+                best_alt = alt
+                best_i = i
+                # print(d)
+                # print(q)
+                # print(alt)
+                # pyutils.breakpoint()
+        return best_alt, best_i
+
+    def plan(self, *args, **kwargs):
+        need_to_resample = NaivePlanner.__resample_criteria__(self, **kwargs)
+        loon = parsekw(kwargs, 'loon', None)
+        if need_to_resample:
+            self.last_sounding_position = np.array(loon.get_pos()[0:2])
+            self.last_sounding_time = parsekw(kwargs, 'tcurr', None)
+            pol = self.points_to_sample
+        else:
+            F_desired = self.__F_desired__(p=loon.get_pos(), pstar=kwargs.get('pstar'))
+            self.F_actual = np.array(loon.get_vel()[0:2])
+            alpha = self.__alpha__(F_desired)
+            need_new_action = self.__need_new_action__(alpha)
+            print(alpha)
+            print(self.alpha_prev)
+            print(self.alpha_threshold)
+            if need_new_action:
+                pol, i = self.__best_alt__(F_desired)
+                if pol == self.prev_pol:
+                    pol = -1
+                else:
+                    self.prev_pol = pol
+                self.F_actual = np.array(self.data[i][1:])
+                self.alpha_prev = self.__alpha__(F_desired)
+            else:
+                pol = -1
+        pol = np.array(pol)
+        if len(pol.shape) == 0:
+            pol = np.array([pol])
+        return pol
 
 """ HASN'T BEEN USED FOR A WHILE """
 class MonteCarloPlanner(LoonPathPlanner):
@@ -388,6 +617,50 @@ class MonteCarloPlanner(LoonPathPlanner):
 
 """ HASN'T BEEN USED FOR A WHILE """
 class PlantInvertingController(LoonPathPlanner):
+    def __init__(self, *args, **kwargs):
+        LoonPathPlanner.__init__(self, *args, **kwargs)
+        self.GPx = self.vx_estimator.get_current_estimator()
+        K1x, K2x = self.__recreate_gp__(self.GPx)
+        self.xx = self.GPx.X_train_
+        yx = self.GPx.y_train_
+        self.M1x = np.dot(np.linalg.inv(K1x),yx)
+        self.M2x = np.dot(np.linalg.inv(K2x),yx)
+        thetax = np.exp(self.GPx.kernel_.theta)
+        self.L1x = thetax[1]
+        self.L2x = thetax[3]
+
+        self.GPy = self.vy_estimator.get_current_estimator()
+        K1y, K2y = self.__recreate_gp__(self.GPy)
+        self.xy = self.GPy.X_train_
+        yy = self.GPy.y_train_
+        self.M1y = np.dot(np.linalg.inv(K1y),yy)
+        self.M2y = np.dot(np.linalg.inv(K2y),yy)
+        thetay = np.exp(self.GPy.kernel_.theta)
+        self.L1y = thetay[1]
+        self.L2y = thetay[3]
+
+    def retrain(self, *args, **kwargs):
+        LoonPathPlanner.retrain(self, *args, **kwargs)
+        self.GPx = self.vx_estimator.get_current_estimator()
+        K1x, K2x = self.__recreate_gp__(self.GPx)
+        self.xx = self.GPx.X_train_
+        yx = self.GPx.y_train_
+        self.M1x = np.dot(np.linalg.inv(K1x),yx)
+        self.M2x = np.dot(np.linalg.inv(K2x),yx)
+        thetax = np.exp(self.GPx.kernel_.theta)
+        self.L1x = thetax[1]
+        self.L2x = thetax[3]
+
+        self.GPy = self.vy_estimator.get_current_estimator()
+        K1y, K2y = self.__recreate_gp__(self.GPy)
+        self.xy = self.GPy.X_train_
+        yy = self.GPy.y_train_
+        self.M1y = np.dot(np.linalg.inv(K1y),yy)
+        self.M2y = np.dot(np.linalg.inv(K2y),yy)
+        thetay = np.exp(self.GPy.kernel_.theta)
+        self.L1y = thetay[1]
+        self.L2y = thetay[3]
+
     def plan(self, *args, **kwargs):
         """
         Calculate control effort to accelerate towards the origin.
@@ -397,18 +670,31 @@ class PlantInvertingController(LoonPathPlanner):
         """
 
         loon = parsekw(kwargs, 'loon', None)
+        retrain = parsekw(kwargs, 'retrain', False)
+        if retrain:
+            self.retrain()
         p = np.array(loon.get_pos())
         if loon == None:
             warning("Must specify loon.")
-        J_x = self.__differentiate_gp__(self.vx_estimator.estimators[0], p[2])
-        J_y = self.__differentiate_gp__(self.vy_estimator.estimators[0], p[2])
+        J_x, J_y = self.__dkdx__(p[2])
         J = np.array([J_x, J_y])
+        print(J)
         x = p[0:2]
+        if np.inner(x,x) == 0:
+            return 5.
         num = np.inner(J, -x / np.inner(x, x))
         den = np.inner(J,J)
-        u = 10000.0 * num / den
-        print("u: " + str(u))
-        u = pyutils.saturate(u, 5)
+        u = num / den
+        # print("u: " + str(u))
+        # u = pyutils.saturate(u, 5)
+        if abs(u) < 1e-3:
+            u = 0
+        elif u > 0:
+            u = 5.
+        else:
+            u = -5.
+        if u != 0:
+            print("u: " + str(u))
         return u
 
     def __kstar_gp__(self, GP, xstar):
@@ -456,34 +742,28 @@ class PlantInvertingController(LoonPathPlanner):
             for j in range(len(x)):
                 K1[i,j] = C1 * np.exp(-((x[i] - x[j])**2) / (2 * L1**2))
                 K2[i,j] = C2 * np.exp(-((x[i] - x[j])**2) / (2 * L2**2))
-        M = np.dot(np.linalg.inv(K1) + np.linalg.inv(K2) + np.eye(len(x))*sigma, y)
+        # M = np.dot(np.linalg.inv(K1) + np.linalg.inv(K2) + np.eye(len(x))*sigma, y)
         return K1, K2
 
-    def __differentiate_gp__(self, GP, xstar):
+    def __dkdx__(self, xstar):
         """
         Differentiate a Gaussian Process.
 
-        parameter GP Gaussian Process to differentiate.
         parameter xstar test point at which to differentiate.
         return derivative of GP at xstar
         """
         # NOTE: Cannot distinguish between different kernel types
         #       (i.e. function is hardcoded for two summed RBF kernels)
 
-        K1, K2 = self.__recreate_gp__(GP)
-        y = GP.y_train_
-        theta = np.exp(GP.kernel_.theta)
-        M1 = np.dot(np.linalg.inv(K1),y)
-        M2 = np.dot(np.linalg.inv(K2),y)
-        Kstar1, Kstar2 = self.__kstar_gp__(GP, xstar)
-        # print(np.dot(Kstar1.T,M1)+np.dot(Kstar2.T,M2))
-        # print(GP.predict(xstar))
-        L1 = theta[1]
-        L2 = theta[3]
-        x = GP.X_train_
-        dkdx =  np.dot(-((xstar - x) / L1**2).T, Kstar1*M1) + \
-                np.dot(-((xstar - x) / L2**2).T, Kstar2*M2)
-        return np.squeeze(dkdx)
+        Kstar1x, Kstar2x = self.__kstar_gp__(self.GPx, xstar)
+        Kstar1y, Kstar2y = self.__kstar_gp__(self.GPy, xstar)
+        dkdx_x =  np.dot(-((xstar - self.xx) / self.L1x**2).T, Kstar1x*self.M1x) + \
+                np.dot(-((xstar - self.xx) / self.L2x**2).T, Kstar2x*self.M2x)
+        dkdx_y =  np.dot(-((xstar - self.xy) / self.L1y**2).T, Kstar1y*self.M1y) + \
+                np.dot(-((xstar - self.xy) / self.L2y**2).T, Kstar2y*self.M2y)
+        dkdx_x = np.squeeze(dkdx_x)
+        dkdx_y = np.squeeze(dkdx_y)
+        return dkdx_x, dkdx_y
 
 class WindAwarePlanner(LoonPathPlanner):
     def __init__(self, *args, **kwargs):
@@ -932,6 +1212,7 @@ class MPCWAPFast(WindAwarePlanner):
         self.__delta_p_between_jetstreams__(u)
         self.__find_altitudes_for_sampling__(100, 0.3)
         self.current_estimator = self.vx_estimator.prediction_key
+        self.type = 'mpcfast'
 
     def __redo_jetstreams_etc__(self, u, loon):
         WindAwarePlanner.__redo_jetstreams__(self, loon.get_pos())
@@ -1321,7 +1602,6 @@ class MPCWAPFast(WindAwarePlanner):
         handle, = ax.plot(np.array(best_p1)[-1] * 1e-3, np.array(best_p0)[-1] * 1e-3, 'o', c='k', markersize=2)
         h.append(handle)
         return h
-
 
 """ HASN'T BEEN USED IN A WHILE """
 class LocalDynamicProgrammingPlanner(WindAwarePlanner):

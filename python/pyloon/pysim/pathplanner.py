@@ -72,6 +72,8 @@ class PathPlanner:
         elif planner == 'naive':
             self.planner = loonpathplanner.NaivePlanner(resamplethreshold=kwargs.get('resamplethreshold'),
                                                         trusttime=kwargs.get('trusttime'))
+        elif planner == 'molchanov':
+            self.planner = loonpathplanner.MolchanovEtAlPlanner(**kwargs)
 
     def plan(self, *args, **kwargs):
         return self.planner.plan(loon=kwargs.get('loon'),

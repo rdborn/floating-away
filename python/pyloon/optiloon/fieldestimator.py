@@ -87,6 +87,9 @@ class FieldEstimator:
         #                 " to " + str(self.estimator_locations[key]))
         self.prediction_key = key
 
+    def get_current_estimator(self):
+        return self.estimators[self.prediction_key]
+
 class GPFE(FieldEstimator):
     def __init__(self, *args, **kwargs):
         FieldEstimator.__init__(self)
@@ -188,7 +191,8 @@ class Multi1DGP(FieldEstimator):
             self.estimators[key] = GPR(kernel=kernel, n_restarts_optimizer=n_restarts_optimizer)
             # FieldEstimator.fit(self, key=key, reset=True)
             # self.fitted = np.append(self.fitted, key)
-        self.__fit_n_closest__(p, 1)
+        self.changing_estimators(p=p)
+        # self.__fit_n_closest__(p, 1)
 
     def predict(self, *arg, **kwargs):
         radius = parsekw(kwargs, 'radius', 40000)

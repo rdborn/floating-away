@@ -2,8 +2,7 @@ import numpy as np
 from scipy.stats import norm
 
 def breakpoint():
-    while True:
-        pass
+    raw_input("BREAKPOINT (press ENTER to continue)")
 
 def combined_mean(arr1, arr2):
     mu1 = np.mean(arr1)
