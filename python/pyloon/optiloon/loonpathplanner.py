@@ -1411,7 +1411,10 @@ class MPCWAPFast(WindAwarePlanner):
                     J_sample = self.__J_sample__(self, pos, new_pos, pstar, target_alt)
 
                 J_fuel = 0.
-                J_i = np.dot(np.array([J_pos, J_vel, J_pos_std**2, J_vel_std**2, J_fuel, J_sample]), gamma) + J
+                # J_i = np.dot(np.array([J_pos, J_vel, J_pos_std**2, J_vel_std**2, J_fuel, J_sample]), gamma) + J
+                J_i = J_pos * gamma[0] + J
+                if depth == 1:
+                    J_i += J_vel * gamma[1]
                 if J_i > self.lowest_J_yet:
                     return
                 policy_i = np.append(np.array(policy), np.array(target_alt))

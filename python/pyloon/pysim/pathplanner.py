@@ -16,62 +16,23 @@ class PathPlanner:
     def __init__(self, *args, **kwargs):
         planner = parsekw(kwargs,'planner','mpcfast')
         if planner == 'mpcfast':
-            self.planner = loonpathplanner.MPCWAPFast(  field=kwargs.get('field'),
-                                                        fieldestimator=kwargs.get('fieldestimator'),
-                                                        lower=kwargs.get('lower'),
-                                                        upper=kwargs.get('upper'),
-                                                        streamres=kwargs.get('streamres'),
-                                                        streammax=kwargs.get('streammax'),
-                                                        streammin=kwargs.get('streammin'),
-                                                        streamsize=kwargs.get('streamsize'),
-                                                        threshold=kwargs.get('threshold'))
+            self.planner = loonpathplanner.MPCWAPFast(**kwargs)
             self.planner.__delta_p_between_jetstreams__(5.0)
         elif planner == 'mpc':
-            self.planner = loonpathplanner.MPCWAP(      field=kwargs.get('field'),
-                                                        fieldestimator=kwargs.get('fieldestimator'),
-                                                        lower=kwargs.get('lower'),
-                                                        upper=kwargs.get('upper'),
-                                                        streamres=kwargs.get('streamres'),
-                                                        streammax=kwargs.get('streammax'),
-                                                        streammin=kwargs.get('streammin'),
-                                                        streamsize=kwargs.get('streamsize'),
-                                                        threshold=kwargs.get('threshold'))
+            self.planner = loonpathplanner.MPCWAP(**kwargs)
             self.planner.__delta_p_between_jetstreams__(5.0)
         elif planner == 'ldp':
-            self.planner = loonpathplanner.LocalDynamicProgrammingPlanner(field=kwargs.get('field'),
-                                                        fieldestimator=kwargs.get('fieldestimator'),
-                                                        lower=kwargs.get('lower'),
-                                                        upper=kwargs.get('upper'),
-                                                        streamres=kwargs.get('streamres'),
-                                                        streammax=kwargs.get('streammax'),
-                                                        streammin=kwargs.get('streammin'),
-                                                        streamsize=kwargs.get('streamsize'),
-                                                        threshold=kwargs.get('threshold'))
+            self.planner = loonpathplanner.LocalDynamicProgrammingPlanner(**kwargs)
             self.planner.__delta_p_between_jetstreams__(5.0)
         elif planner == 'wap':
-            self.planner = loonpathplanner.WindAwarePlanner(field=kwargs.get('field'),
-                                                        fieldestimator=kwargs.get('fieldestimator'),
-                                                        lower=kwargs.get('lower'),
-                                                        upper=kwargs.get('upper'),
-                                                        streamres=kwargs.get('streamres'),
-                                                        streammax=kwargs.get('streammax'),
-                                                        streammin=kwargs.get('streammin'),
-                                                        streamsize=kwargs.get('streamsize'),
-                                                        threshold=kwargs.get('threshold'))
+            self.planner = loonpathplanner.WindAwarePlanner(**kwargs)
             self.planner.__delta_p_between_jetstreams__(5.0)
         elif planner == 'montecarlo':
-            self.planner = loonpathplanner.MonteCarloPlanner(field=kwargs.get('field'),
-                                                        fieldestimator=kwargs.get('fieldestimator'),
-                                                        lower=kwargs.get('lower'),
-                                                        upper=kwargs.get('upper'))
+            self.planner = loonpathplanner.MonteCarloPlanner(**kwargs)
         elif planner == 'pic':
-            self.planner = loonpathplanner.PlantInvertingController(field=kwargs.get('field'),
-                                                        fieldestimator=kwargs.get('fieldestimator'),
-                                                        lower=kwargs.get('lower'),
-                                                        upper=kwargs.get('upper'))
+            self.planner = loonpathplanner.PlantInvertingController(**kwargs)
         elif planner == 'naive':
-            self.planner = loonpathplanner.NaivePlanner(resamplethreshold=kwargs.get('resamplethreshold'),
-                                                        trusttime=kwargs.get('trusttime'))
+            self.planner = loonpathplanner.NaivePlanner(**kwargs)
         elif planner == 'molchanov':
             self.planner = loonpathplanner.MolchanovEtAlPlanner(**kwargs)
 

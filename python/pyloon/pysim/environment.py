@@ -12,38 +12,22 @@ from pyflow import flowfields
 
 class Environment:
 	def __init__(self, *args, **kwargs):
-		type = parsekw(kwargs, 'type', 'sounding')
+		type = parsekw(kwargs, 'environment', 'sounding')
 		if type == 'sounding':
-			self.wind = flowfields.SoundingField(file=kwargs.get('file'))
+			self.wind = flowfields.SoundingField(**kwargs)
 		elif type == 'sine':
-			self.wind = flowfields.SineField(	zmin=kwargs.get('zmin'),
-												zmax=kwargs.get('zmax'),
-												resolution=kwargs.get('resolution'),
-												frequency=kwargs.get('frequency'),
-												amplitude=kwargs.get('amplitude'),
-												phase=kwargs.get('phase'),
-												offset=kwargs.get('offset'))
+			self.wind = flowfields.SineField(**kwargs)
 		elif type == 'noaa':
 			self.hr_curr = 0
 			self.hr_inc = 3
-			self.wind = flowfields.NOAAField(	origin=kwargs.get('origin'),
-												latspan=kwargs.get('latspan'),
-												lonspan=kwargs.get('lonspan'),
-												hoursahead=self.hr_curr)
-			self.upcoming_wind = flowfields.NOAAField(origin=kwargs.get('origin'),
-												latspan=kwargs.get('latspan'),
-												lonspan=kwargs.get('lonspan'),
-												hoursahead=(self.hr_curr + self.hr_inc))
+			kwargs['hoursahead'] = self.hr_curr
+			self.wind = flowfields.NOAAField(**kwargs)
+			kwargs['hoursahead'] = self.hr_curr + self.hr_inc
+			self.upcoming_wind = flowfields.NOAAField(**kwargs)
 		elif type == 'brownsounding':
-			self.wind = flowfields.BrownianSoundingField(file=kwargs.get('file'))
+			self.wind = flowfields.BrownianSoundingField(**kwargs)
 		elif type == 'brownsine':
-			self.wind = flowfields.BrownianSineField(zmin=kwargs.get('zmin'),
-												zmax=kwargs.get('zmax'),
-												resolution=kwargs.get('resolution'),
-												frequency=kwargs.get('frequency'),
-												amplitude=kwargs.get('amplitude'),
-												phase=kwargs.get('phase'),
-												offset=kwargs.get('offset'))
+			self.wind = flowfields.BrownianSineField(**kwargs)
 
 	def get_flow(self, *args, **kwargs):
 		p = parsekw(kwargs, 'p', np.inf * np.ones(3))

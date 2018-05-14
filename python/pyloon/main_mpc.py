@@ -19,8 +19,10 @@ planner = 'mpcfast'
 alwayssample = False
 dontsample = True
 samplingtime = 0.1*300
-# gamma = np.array([1.,1e5,0.,0.,0.,0.]) # tuning parameter for cost function (lower = care more about pos, less about vel)
-gamma = np.array([0.,1.,0.,0.,0.,0.]) # tuning parameter for cost function (lower = care more about pos, less about vel)
+gamma = np.array([1.,1e4,0.,0.,0.,0.]) # tuning parameter for cost function (lower = care more about pos, less about vel)
+# gamma = np.array([1.,1e4,0.,0.,0.,0.]) # tuning parameter for cost function (lower = care more about pos, less about vel)
+# gamma = np.array([1.,0.,0.,0.,0.,0.]) # tuning parameter for cost function (lower = care more about pos, less about vel)
+# gamma = np.array([0.,1.,0.,0.,0.,0.]) # tuning parameter for cost function (lower = care more about pos, less about vel)
 while alwayssample and gamma[-1] != 0:
 	print("WOAH you sure about that?")
 # options: gpfe, knn1dgp, multi1dgp
@@ -43,12 +45,12 @@ offset =		0.0
 
 # IF environment = 'noaa' set the lat/lon center (origin) and span of the field
 origin =	np.array([37.4268, -122.1733])
-latspan =	140000.0
-lonspan =	140000.0
+latspan =	200000.0
+lonspan =	200000.0
 
 # Upper and lower altitude bounds for the balloon
 lower = 5000.0
-upper = 30000.0
+upper = 22000.0
 
 # IF planner = 'naive'
 resamplethreshold = 2000000
@@ -69,7 +71,7 @@ threshold =		0.005
 # Balloon initial position
 xi = 0.0
 yi = 0.0
-zi = 16000.0
+zi = 10.0
 
 # Simulation sampling frequency
 Fs = 0.2
@@ -283,6 +285,11 @@ while True:
 							pstar=pstar,
 							depth=depth,
 							gamma=gamma)
+			if plot:
+				if plottofile:
+					LS.plot(outfile=out_file, planner=planner)
+				else:
+					LS.plot(planner=planner)
 			if planner == 'naive':
 				if pol[0] < 0:
 					# Figure out if we should go up or down first
@@ -360,11 +367,6 @@ while True:
 				else:
 					LS = get_there(LS, pol[0], u, T, exact=True)
 
-			if plot:
-				if plottofile:
-					LS.plot(outfile=out_file, planner=planner)
-				else:
-					LS.plot(planner=planner)
 			pos = LS.loon.get_pos()
 			print("New position:")
 			print("\t(" + str(np.int(pos[0])) + ", " + str(np.int(pos[1])) + ", " + str(np.int(pos[2])) + ")")

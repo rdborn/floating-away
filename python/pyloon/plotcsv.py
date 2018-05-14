@@ -6,6 +6,9 @@ from matplotlib import gridspec
 from scipy.interpolate import griddata
 import os.path
 import sys
+from pyutils import pyutils
+from optiloon.pycosts import J_position as Jp
+from optiloon.pycosts import J_velocity as Jv
 
 def get_dirs(directory, substr):
     subdirs = glob((directory + "*/"))
@@ -415,4 +418,197 @@ def plot3():
     plt.setp(ax_jvel_all.get_xticklabels(), visible=False)
     plt.show()
 
-plot3()
+def extract_data_no_fields(file):
+    data = []
+    with open(file) as f:
+        reader = csv.reader(f)
+        i = 0
+        for row in reader:
+            if i < 4:
+                i += 1
+            else:
+                data.append(row)
+    return data
+
+def running_avg(d):
+    avg = np.cumsum(d) / np.linspace(1, len(d), len(d))
+    return avg
+
+def running_avg_and_std(d):
+    avg_d = np.zeros(len(d))
+    std_d = np.zeros(len(d))
+    for i in range(len(d)):
+        if i > 0:
+            avg_d[i] = np.mean(d[:i])
+            std_d[i] = np.std(d[:i])
+    return avg_d, std_d
+
+def plot_distribution_of_mean(ax, data, idx, **kwargs):
+    scale = pyutils.parsekw(kwargs, 'scale', 1.)
+    tidx = pyutils.parsekw(kwargs, 'tidx', 0)
+    run_avg = pyutils.parsekw(kwargs, 'run_avg', True)
+    c = pyutils.parsekw(kwargs, 'c', 'k')
+    di = []
+    ti = []
+    for d in data:
+        d_float = np.array(d[idx], dtype=float)
+        t_float = np.array(d[tidx], dtype=float)
+        if run_avg:
+            di.append(running_avg(d_float))
+        else:
+            di.append(d_float)
+        ti.append(t_float)
+    ti = np.array(ti)
+    m = 25
+    t, mu, sigma = get_mean_and_var(ti, di, m)
+    t = t / 3600. # sec to hr
+    mu = mu * scale
+    sigma = sigma * scale
+    ax.plot(t, mu, c=c)
+    ax.plot(t, mu+2*sigma, c=c, linestyle='dashed')
+    ax.plot(t, mu-2*sigma, c=c, linestyle='dashed')
+
+def plot_running_avg_and_std(ax, data, idx, **kwargs):
+    scale = pyutils.parsekw(kwargs, 'scale', 1.)
+    tidx = pyutils.parsekw(kwargs, 'tidx', 0)
+    run_avg = pyutils.parsekw(kwargs, 'run_avg', True)
+    c = pyutils.parsekw(kwargs, 'c', 'k')
+    uncertainties = pyutils.parsekw(kwargs, 'uncertainties', False)
+    di = []
+    di_std = []
+    ti = []
+    for d in data:
+        d_float = np.array(d[idx], dtype=float)
+        t_float = np.array(d[tidx], dtype=float)
+        mu, sigma = running_avg_and_std(d_float)
+        di.append(mu)
+        di_std.append(sigma)
+        ti.append(t_float)
+    ti = np.array(ti)
+    m = len(di)
+    di_t, di_mu, di_sigma = get_mean_and_var(ti, di, m)
+    di_std_t, di_std_mu, di_std_sigma = get_mean_and_var(ti, di_std, m)
+    di_t = di_t / 3600. # sec to hr
+    di_mu = di_mu * scale
+    di_std_mu = di_std_mu * scale
+    di_sigma = di_sigma * scale
+    di_std_sigma = di_std_sigma * scale
+    di_mu_uncertainty = 2 * di_sigma
+    di_std_uncertainty = di_mu_uncertainty + 2 * di_std_sigma
+    ax.plot(di_t, di_mu, c=c)
+    ax.plot(di_t, di_mu+2*di_std_mu, c=c*0.7, linestyle='dashed')
+    ax.plot(di_t, di_mu-2*di_std_mu, c=c*0.5, linestyle='dashed')
+    if uncertainties:
+        ax.plot(di_t, di_mu+di_mu_uncertainty, c=c, linestyle='dotted')
+        ax.plot(di_t, di_mu-di_mu_uncertainty, c=c, linestyle='dotted')
+        ax.plot(di_t, di_mu+2*di_std_mu+di_std_uncertainty, c=c*0.7, linestyle='dotted')
+        ax.plot(di_t, di_mu+2*di_std_mu-di_std_uncertainty, c=c*0.7, linestyle='dotted')
+        ax.plot(di_t, di_mu-2*di_std_mu+di_std_uncertainty, c=c*0.5, linestyle='dotted')
+        ax.plot(di_t, di_mu-2*di_std_mu-di_std_uncertainty, c=c*0.5, linestyle='dotted')
+
+def plot_all(ax, data, idx, **kwargs):
+    scale = pyutils.parsekw(kwargs, 'scale', 1.)
+    tidx = pyutils.parsekw(kwargs, 'tidx', 0)
+    run_avg = pyutils.parsekw(kwargs, 'run_avg', True)
+    c = pyutils.parsekw(kwargs, 'c', 'k')
+    max_gray = 0.7
+    min_gray = 1.
+    del_gray = abs(max_gray - min_gray) / len(data)
+    gray = min_gray
+    for d in data:
+        d_float = np.array(d[idx], dtype=float)
+        t_float = np.array(d[tidx], dtype=float)
+        if run_avg:
+            di = running_avg(d_float) * scale
+        else:
+            di = d_float * scale
+        ti = t_float / 3600. # sec to hr
+        ax.plot(ti, di, c=c*gray)
+        gray -= del_gray
+
+def process4(data, m):
+    processed = []
+    i = 0
+    for d in data:
+        t = []
+        x = []
+        y = []
+        vx = []
+        vy = []
+        jp = []
+        jv = []
+        jt = []
+        for row in d:
+            ti = row[0]
+            xi = row[1]
+            yi = row[2]
+            vxi = row[5][1:-1]
+            vyi = row[6][1:-1]
+            jpi = Jp(p=np.array([xi, yi], dtype=float), pstar=np.zeros(2))
+            jvi = Jv(p=np.array([xi, yi], dtype=float), pstar=np.zeros(2), pdot=np.array([vxi, vyi], dtype=float))
+            jti = jpi * 1e0 + jvi * 1e5
+            t.append(ti)
+            x.append(xi)
+            y.append(yi)
+            vx.append(vxi)
+            vy.append(vyi)
+            jp.append(jpi)
+            jv.append(jvi)
+            jt.append(jti)
+        processed_i = [t, x, y, vx, vy, jp, jv, jt]
+        processed.append(processed_i)
+        i += 1
+        print(str(i) + "/" + str(m))
+        if i >= m:
+            break
+    return processed
+
+def plot4_helper(ax_jp, ax_jv, ax_jt, ax_jp_all, ax_jv_all, ax_jt_all, parent_dir, case_no, depth, c):
+    path = parent_dir \
+        + "/case-" + str(case_no) \
+        + "/depth-" + str(depth) + "/"
+    print path
+    directories = glob(path + "*/")
+    raw_data = []
+    for d in directories:
+        print d
+        f = d + d[len(path + 'fig_'):-1] + '.csv'
+        raw_data.append(extract_data_no_fields(f))
+    m = 10#len(directories)
+    data = process4(raw_data, m)
+
+    plot_running_avg_and_std(ax_jp, data, 5, scale=1e-3, run_avg=False, c=c)
+    plot_running_avg_and_std(ax_jv, data, 6, scale=1e-3, run_avg=False, c=c)
+    plot_running_avg_and_std(ax_jt, data, 7, scale=1e-3, run_avg=False, c=c)
+
+    plot_all(ax_jp_all, data, 5, scale=1e-3, run_avg=False, c=c)
+    plot_all(ax_jv_all, data, 6, scale=1e-3, run_avg=False, c=c)
+    plot_all(ax_jt_all, data, 7, scale=1e-3, run_avg=False, c=c)
+
+def plot4():
+    fig = plt.figure()
+    gs = gridspec.GridSpec(3,2)
+
+    ax_jp = fig.add_subplot(gs[0,0])
+    ax_jv = fig.add_subplot(gs[1,0], sharex=ax_jp)
+    ax_jt = fig.add_subplot(gs[2,0], sharex=ax_jp)
+
+    ax_jp_all = fig.add_subplot(gs[0,1])
+    ax_jv_all = fig.add_subplot(gs[1,1], sharex=ax_jp_all)
+    ax_jt_all = fig.add_subplot(gs[2,1], sharex=ax_jp_all)
+
+    parent_dir = "./quadcosts"
+    case_no = 0
+    depth = 8
+    c = np.array([1.,0.,0.])
+    plot4_helper(ax_jp, ax_jv, ax_jt, ax_jp_all, ax_jv_all, ax_jt_all, parent_dir, case_no, depth, c)
+
+    parent_dir = "./quadcosts"
+    case_no = 1
+    depth = 8
+    c = np.array([0.,1.,0.])
+    plot4_helper(ax_jp, ax_jv, ax_jt, ax_jp_all, ax_jv_all, ax_jt_all, parent_dir, case_no, depth, c)
+
+    plt.show()
+
+plot4()

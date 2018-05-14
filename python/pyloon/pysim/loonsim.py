@@ -32,36 +32,12 @@ class LoonSim:
 		i_should_plot_to_file = parsekw(kwargs, 'plottofile', False)
 		self.samplingtime = parsekw(kwargs, 'samplingtime', 0.)
 		print("Setting up environment...")
-		self.environment = Environment(	type=kwargs.get('environment'),
-										file=kwargs.get('file'),
-										origin=kwargs.get('origin'),
-										latspan=kwargs.get('latspan'),
-										lonspan=kwargs.get('lonspan'),
-										zmin=kwargs.get('zmin'),
-										zmax=kwargs.get('zmax'),
-										resolution=kwargs.get('resolution'),
-										frequency=kwargs.get('frequency'),
-										amplitude=kwargs.get('amplitude'),
-										phase=kwargs.get('phase'),
-										offset=kwargs.get('offset'))
+		self.environment = Environment(**kwargs)
 		print("Setting up path planner...")
-		self.pathplanner = PathPlanner(	planner=kwargs.get('planner'),
-										field=self.environment.wind,
-                                        fieldestimator=kwargs.get('fieldestimator'),
-                                        lower=kwargs.get('lower'),
-                                        upper=kwargs.get('upper'),
-                                        streamres=kwargs.get('streamres'),
-                                        streammax=kwargs.get('streammax'),
-                                        streammin=kwargs.get('streammin'),
-                                        streamsize=kwargs.get('streamsize'),
-                                        threshold=kwargs.get('threshold'),
-										resamplethreshold=kwargs.get('resamplethreshold'),
-										trusttime=kwargs.get('trusttime'))
+		kwargs['field'] = self.environment.wind
+		self.pathplanner = PathPlanner(**kwargs)
 		print("Setting up agent...")
-		self.loon = Loon(				xi=parsekw(kwargs, 'xi', 0.0),
-										yi=parsekw(kwargs, 'yi', 0.0),
-										zi=parsekw(kwargs, 'zi', (self.environment.wind.pmin[2] + self.environment.wind.pmax[2]) / 2.0),
-										Fs=self.Fs)
+		self.loon = Loon(**kwargs)
 		if i_should_plot:
 			print("Setting up plot...")
 			#	________________	______  ______  ______  ____________
