@@ -35,6 +35,8 @@ class PathPlanner:
             self.planner = loonpathplanner.NaivePlanner(**kwargs)
         elif planner == 'molchanov':
             self.planner = loonpathplanner.MolchanovEtAlPlanner(**kwargs)
+        elif planner == 'stayaloft':
+            self.planner = loonpathplanner.JustStayAloft(**kwargs)
 
     def plan(self, *args, **kwargs):
         return self.planner.plan(loon=kwargs.get('loon'),

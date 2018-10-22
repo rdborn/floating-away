@@ -213,7 +213,7 @@ class Multi1DGP(FieldEstimator):
                 return
             else:
                 n_to_keep = 1
-                n_to_skip = np.int(np.round( 1. / restriction ))
+                n_to_skip = np.int(np.round( 1. / restriction )) - 1
         else:
             n_to_keep = restriction
             n_to_skip = 1

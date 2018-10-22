@@ -97,7 +97,7 @@ class LoonSim:
 	def plan(self, *args, **kwargs):
 		retrain = False
 		if (self.tcurr - self.tlast) / 3600.0 > self.environment.hr_inc:
-			if self.pathplanner.planner.fieldestimator != 'naive':
+			if self.pathplanner.planner.type != 'naive' and self.pathplanner.planner.type != 'stayaloft':
 				self.pathplanner.planner.retrain(field=self.environment.wind, p=self.loon.get_pos())
 				self.tlast += (self.environment.hr_inc * 3600.0)
 				retrain = True
@@ -108,7 +108,8 @@ class LoonSim:
 					                            depth=kwargs.get('depth'),
 												tcurr=self.tcurr,
 												gamma=kwargs.get('gamma'),
-												retrain=retrain)
+												retrain=retrain,
+												field=self.environment.wind)
 
 	def propogate(self, u, **kwargs):
 		"""
@@ -140,7 +141,7 @@ class LoonSim:
 		self.trecord += self.dt
 
 		if self.trecord >= 60.0:
-			if self.pathplanner.planner.type == 'molchanov':
+			if self.pathplanner.planner.type == 'molchanov' or self.pathplanner.planner.type == 'stayaloft':
 				vx_pred = [0.]
 				vy_pred = [0.]
 				stdx = [0.]
@@ -298,7 +299,7 @@ class LoonSim:
 		p_test[:,0] = lats[-1] * np.ones(N_test)
 		p_test[:,1] = lons[-1] * np.ones(N_test)
 		p_test[:,2] = z_test
-		if planner == 'mpcfast':
+		if planner == 'mpcfast' or planner == 'pic':
 			# s1 = self.pathplanner.planner.vx_estimator.plot_current(self.ax_latlon, s=100, c='r')
 			# s2 = self.pathplanner.planner.vy_estimator.plot_current(self.ax_latlon, s=200, c='g')
 			vlat_test, vlon_test, std_x, std_y = self.pathplanner.planner.predict(p_test.T)
@@ -372,15 +373,18 @@ class LoonSim:
 		if planner == 'naive':
 			dir_profile = self.ax_alt_dir.scatter((sampled_dirs * 180.0 / np.pi) % 360, sampled_alts*1e-3, c='k')
 			mag_profile = self.ax_alt_mag.scatter(sampled_mags, sampled_alts*1e-3, c='k')
-		elif planner == 'mpcfast':
+		elif planner == 'mpcfast' or planner == 'pic':
 			dir_profile, = self.ax_alt_dir.plot(dir_test, z_test, c='k')
 			dir_upper, = self.ax_alt_dir.plot(dir_upper, z_test, c='k', linestyle='dashed')
 			dir_lower, = self.ax_alt_dir.plot(dir_lower, z_test, c='k', linestyle='dotted')
 			mag_profile, = self.ax_alt_mag.plot(mag_test, z_test, c='k')
 			mag_upper, = self.ax_alt_mag.plot(mag_test_upper, z_test, c='k', linestyle='dashed')
 			mag_lower, = self.ax_alt_mag.plot(mag_test_lower, z_test, c='k', linestyle='dashed')
-			self.pathplanner.planner.plot(ax=self.ax_plan)
-			handles = self.pathplanner.planner.plot_paths(ax=self.ax_latlon, p=self.loon.get_pos())
+			if planner == 'mpcfast':
+				self.pathplanner.planner.plot(ax=self.ax_plan)
+				handles = self.pathplanner.planner.plot_paths(ax=self.ax_latlon, p=self.loon.get_pos())
+		elif planner == 'molchanov':
+			arrows = self.pathplanner.planner.plot(ax=self.ax_alt_jets)
 		dir_profile_truth, = self.ax_alt_dir.plot(dir_truth % 360, z_test, c='grey')
 		mag_profile_truth, = self.ax_alt_mag.plot(mag_truth, z_test, c='grey')
 		self.ax_latlon.plot(lons, lats, c=np.ones(3)*0.2)
@@ -401,7 +405,7 @@ class LoonSim:
 		else:
 			prev_alt = self.ax_alt_jets.scatter(-1, alts[-1], c='k')
 
-		if self.pathplanner.planner.type != 'molchanov':
+		if self.pathplanner.planner.type != 'molchanov' and self.pathplanner.planner.type != 'stayaloft':
 			s5, s6, s7, r5, r6, r7 = self.pathplanner.planner.vx_estimator.plot(self.ax_latlon)
 
 		# SETP
@@ -450,7 +454,7 @@ class LoonSim:
 			self.fancy_plot.set_size_inches((18,10), forward=True)
 			self.fancy_plot.savefig(out_file, bbox_inches='tight')
 
-		if planner == 'mpcfast':
+		if planner == 'mpcfast' or planner == 'pic':
 			dir_upper.remove()
 			dir_lower.remove()
 			mag_upper.remove()
@@ -472,13 +476,15 @@ class LoonSim:
 		# s2.remove()
 		# s3.remove()
 		# s4.remove()
-		if self.pathplanner.planner.type != 'molchanov':
+		if self.pathplanner.planner.type != 'molchanov' and self.pathplanner.planner.type != 'stayaloft':
 			s5.remove()
 			s6.remove()
 			s7.remove()
 			r5.remove()
 			r6.remove()
 			r7.remove()
+		if planner == 'molchanov':
+			arrows.remove()
 		if planner == 'mpcfast':
 			rects.remove()
 			rects_expectation.remove()

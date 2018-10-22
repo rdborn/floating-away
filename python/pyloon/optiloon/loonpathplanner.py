@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.patches import Rectangle, Arrow
+from matplotlib.collections import PatchCollection
 from sklearn.gaussian_process.kernels import RBF, Matern, WhiteKernel, ConstantKernel as C
 import copy
 import itertools
@@ -15,7 +17,40 @@ from optiloon.fieldestimator import GPFE, KNN1DGP, Multi1DGP
 from optiloon.pycosts import J_position as Jp
 from optiloon.pycosts import J_velocity as Jv
 from optiloon.pycosts import J_acceleration as Ja
+from optiloon.pycosts import J_reachable_set as Jr
+from optiloon.pycosts import J_drift as Jd
 from optiloon.pycosts import range_J
+
+class JustStayAloft:
+    def __init__(self, *args, **kwargs):
+        self.lower = parsekw(kwargs, 'lower', 5000.0)
+        self.upper = parsekw(kwargs, 'upper', 25000.0)
+        self.type = 'stayaloft'
+        self.off_nominal = False
+
+    def plan(self, *args, **kwargs):
+        loon = parsekw(kwargs, 'loon', None)
+        p = loon.get_pos()
+        if p[2] < self.lower:
+            pol =  self.lower
+            return pol
+        elif p[2] > self.upper:
+            pol = self.upper
+            return pol
+        else:
+            return -1
+
+    def __plan__(self, *args, **kwargs):
+        loon = parsekw(kwargs, 'loon', None)
+        p = loon.get_pos()
+        if p[2] < self.lower or p[2] > self.upper:
+            pol =  (self.lower + self.upper) / 2.
+            print self.lower
+            print self.upper
+            print pol
+            return pol
+        else:
+            return -1
 
 class LoonPathPlanner:
     def __init__(self, *args, **kwargs):
@@ -29,11 +64,14 @@ class LoonPathPlanner:
 
         field = parsekw(kwargs, 'field', 0.0) # wind field object
         self.fieldestimator = parsekw(kwargs, 'fieldestimator', 'gpfe')
+        self.type = parsekw(kwargs, 'fieldestimator', 'gpfe')
         self.lower = parsekw(kwargs, 'lower', 0.0)
         self.upper = parsekw(kwargs, 'upper', 100)
+        self.restrict = parsekw(kwargs, 'restrict', False)
+        self.restriction = parsekw(kwargs, 'restriction', 0.5)
         self.sampled_points = []
         self.alts_to_sample = np.array([])
-        self.train(field=field)
+        self.train(**kwargs)
         self.off_nominal = False
 
     def add_sample(self, *args, **kwargs):
@@ -96,7 +134,7 @@ class LoonPathPlanner:
         elif self.fieldestimator == 'multi1dgp':
             self.vx_estimator = Multi1DGP()
             self.vy_estimator = Multi1DGP()
-        return self.retrain(field=field)
+        return self.retrain(**kwargs)
 
     def retrain(self, *args, **kwargs):
         """
@@ -115,13 +153,17 @@ class LoonPathPlanner:
                             y=vx,
                             kernel=self.kernel,
                             n_restarts_optimizer=self.n_restarts_optimizer,
-                            p=p)
+                            p=p,
+                            restrict=self.restrict,
+                            restriction=self.restriction)
         print("\tTraining GPy")
         self.vy_estimator.fit(X=coords,
                             y=vy,
                             kernel=self.kernel,
                             n_restarts_optimizer=self.n_restarts_optimizer,
-                            p=p)
+                            p=p,
+                            restrict=self.restrict,
+                            restriction=self.restriction)
 
         return True
 
@@ -166,6 +208,7 @@ class NaivePlanner(LoonPathPlanner):
         self.points_to_sample = parsekw(kwargs, 'points_to_sample', None)
         self.sampled_points = []
         self.fieldestimator = 'naive'
+        self.type = 'naive'
         self.upper = parsekw(kwargs, 'upper', 30000.)
         self.lower = parsekw(kwargs, 'lower', 0.)
 
@@ -180,6 +223,9 @@ class NaivePlanner(LoonPathPlanner):
         vx = magnitude * np.cos(direction)
         vy = magnitude * np.sin(direction)
         val = np.array([p[2], vx, vy])
+        print("\taltitude:\t" + str(p[2]))
+        print("\tvx:\t\t" + str(vx))
+        print("\tvy:\t\t" + str(vy))
         self.sampled_points.append(val)
 
     def retrain(self, *args, **kwargs):
@@ -234,20 +280,63 @@ class MolchanovEtAlPlanner(NaivePlanner):
         self.upper = parsekw(kwargs, 'upper', 30000.)
         self.lower = parsekw(kwargs, 'lower', 0.)
         self.alpha_threshold = parsekw(kwargs, 'alpha_threshold', 0.2)
+        trusttime = parsekw(kwargs, 'trusttime', 6)
+        threshold = parsekw(kwargs, 'threshold', 200000)
+        restrict = parsekw(kwargs, 'restrict', False)
+        restriction = parsekw(kwargs, 'restriction', 0.5)
         vx, vy, coords = LoonPathPlanner.__parse_field__(self, field)
         self.__partition__(coords, vx, vy)
+        if restrict:
+            self.__restrict__(restriction)
         R, self.idx = self.__R_max__(6)
         self.altitudes = self.X.values()[0][self.idx]
-        NaivePlanner.__init__(self, trusttime=6, threshold=200000, points_to_sample=self.altitudes)
+        NaivePlanner.__init__(self, trusttime=trusttime, threshold=threshold, points_to_sample=self.altitudes)
         self.type = 'molchanov'
         self.off_nominal = False
         self.alpha_prev = np.inf
         self.just_retrained = False
         self.prev_pol = -1
+        self.data = []
 
     def retrain(self, *args, **kwargs):
         NaivePlanner.retrain(self, *args, **kwargs)
         self.just_retrained = True
+
+    def __restrict__(self, restriction):
+        if restriction == 1:
+            return
+        if restriction < 1:
+            if restriction > 0.5:
+                print("WARNING: restriction between 0.5 and 1.0 is meaningless, taking no action")
+                return
+            else:
+                n_to_keep = 1
+                n_to_skip = np.int(np.round( 1. / restriction )) - 1
+        else:
+            n_to_keep = restriction
+            n_to_skip = 1
+
+        for i, key in enumerate(self.X.keys()):
+            skip_counter = 0
+            keep_counter = 0
+            # Sort data in order of altitude
+            sort_idx = np.argsort(self.X[key])
+            X_curr = self.X[key][sort_idx]
+            X_new = []
+            keeping = True
+            for j, x in enumerate(X_curr):
+                if keeping:
+                    X_new.append(X_curr[j])
+                    keep_counter += 1
+                    if keep_counter == n_to_keep:
+                        keeping = False
+                        keep_counter = 0
+                else:
+                    skip_counter += 1
+                    if skip_counter == n_to_skip:
+                        keeping = True
+                        skip_counter = 0
+            self.X[key] = np.array(X_new)
 
     def __partition__(self, X, vx, vy):
         self.locations = dict()
@@ -438,6 +527,27 @@ class MolchanovEtAlPlanner(NaivePlanner):
             pol = np.array([pol])
         return pol
 
+    def plot(self, ax, **kwargs):
+        patches = []
+        if len(self.data) == 0:
+            for a in self.X.values()[0]:
+                ax.scatter(0., a*1e-3, s=100, facecolors='none', edgecolors='k')
+            for a in self.altitudes:
+                ax.scatter(0., a*1e-3, s=100, facecolors='k', alpha=0.2)
+        for d in self.data:
+            alt = d[0]
+            vy = d[1]
+            vx = d[2]
+            magnitude = (np.sqrt(vx**2 + vy**2))
+            vx = vx / magnitude
+            vy = vy / magnitude
+            dlon = np.log(magnitude) * vx / 2.
+            dlat = np.log(magnitude) * vy / 2.
+            arr = Arrow(0., alt*1e-3, dlon, dlat, 1e0*0.7, facecolor='k', alpha=0.3)
+            patches.append(arr)
+        collection = PatchCollection(patches, alpha=0.3, facecolor='k')
+        return ax.add_collection(collection)
+
 """ HASN'T BEEN USED FOR A WHILE """
 class MonteCarloPlanner(LoonPathPlanner):
     def __init__(self, *args, **kwargs):
@@ -615,9 +725,9 @@ class MonteCarloPlanner(LoonPathPlanner):
             p = self.backedges[p][0]
         return pol
 
-""" HASN'T BEEN USED FOR A WHILE """
 class PlantInvertingController(LoonPathPlanner):
     def __init__(self, *args, **kwargs):
+        self.type = 'pic'
         LoonPathPlanner.__init__(self, *args, **kwargs)
         self.GPx = self.vx_estimator.get_current_estimator()
         K1x, K2x = self.__recreate_gp__(self.GPx)
@@ -672,7 +782,7 @@ class PlantInvertingController(LoonPathPlanner):
         loon = parsekw(kwargs, 'loon', None)
         retrain = parsekw(kwargs, 'retrain', False)
         if retrain:
-            self.retrain()
+            self.retrain(**kwargs)
         p = np.array(loon.get_pos())
         if loon == None:
             warning("Must specify loon.")
@@ -780,11 +890,7 @@ class WindAwarePlanner(LoonPathPlanner):
         kwarg 'streamsize' minimum number of sample points for a jetstream to be classified as such.
         """
 
-        LoonPathPlanner.__init__(   self,
-                                    field=kwargs.get('field'),
-                                    lower=kwargs.get('lower'),
-                                    upper=kwargs.get('upper'),
-                                    fieldestimator=kwargs.get('fieldestimator'))
+        LoonPathPlanner.__init__(self, **kwargs)
         self.streamres = parsekw(kwargs, 'streamres', 500)
         self.streammax = parsekw(kwargs, 'streammax', 30000)
         self.streammin = parsekw(kwargs, 'streammin', 0)
@@ -1204,6 +1310,7 @@ class MPCWAPFast(WindAwarePlanner):
     def __init__(self, *args, **kwargs):
         WindAwarePlanner.__init__(self, **kwargs)
         u = parsekw(kwargs, 'u', 5.0)
+        self.dpmax, trash = self.__delta_p_between_alts__(u, self.upper, self.lower)
         self.off_nominal = True
         print("nominal dp")
         self.__delta_p_between_jetstreams__(u)
@@ -1213,9 +1320,11 @@ class MPCWAPFast(WindAwarePlanner):
         self.__find_altitudes_for_sampling__(100, 0.3)
         self.current_estimator = self.vx_estimator.prediction_key
         self.type = 'mpcfast'
+        self.timenormalize = parsekw(kwargs, 'timenormalize', False)
 
     def __redo_jetstreams_etc__(self, u, loon):
         WindAwarePlanner.__redo_jetstreams__(self, loon.get_pos())
+        self.dpmax, trash = self.__delta_p_between_alts__(u, self.upper, self.lower)
         self.off_nominal = not self.off_nominal
         self.__delta_p_between_jetstreams__(u)
         self.off_nominal = not self.off_nominal
@@ -1238,7 +1347,10 @@ class MPCWAPFast(WindAwarePlanner):
         self.backedges = dict()
         self.curr_key = 0
         self.leaves = dict()
-        self.lowest_J_yet = np.inf
+        self.worst_J_N_yet = -np.inf
+        self.best_J_yet = np.inf
+        self.best_J_N_yet = np.inf
+        self.best_t_yet = -np.inf
         self.nodes_expanded = 0
         trash, trash, trash, trash = self.predict(p)
         self.current_estimator = self.vx_estimator.prediction_key
@@ -1273,7 +1385,7 @@ class MPCWAPFast(WindAwarePlanner):
         self.__preplan__(loon, u, radius)
         self.__check_nominality__(delta_quality_threshold)
         print("tree search")
-        self.__tree_search__(loon.get_pos(), 1, u, T, pstar, depth, 0.0, np.array([]), gamma)
+        self.__tree_search__(loon.get_pos(), 1, u, T, pstar, depth, 0.0, 0.0, np.array([]), gamma, 0.0)
         best_pol, best_J = self.__best_pol__(p=loon.get_pos())
         return best_pol
 
@@ -1302,11 +1414,13 @@ class MPCWAPFast(WindAwarePlanner):
         vy = magnitude * np.sin(direction)
         total_T = 0.0
         if WindAwarePlanner.__moving_towards_target__(self, pos[0:2], pstar, jet):
-            while d_accel_cost < 0.5*prev_accel_cost:
+            moving_towards = True
+            while moving_towards and d_accel_cost < 0.5*prev_accel_cost:
                 total_T += T
                 dp = np.array([vx, vy]) * total_T
                 new_accel_cost = Ja(p=pos[0:2]+dp, pstar=pstar, pdot=jet.v)
                 d_accel_cost = abs(new_accel_cost - prev_accel_cost)
+                # moving_towards = WindAwarePlanner.__moving_towards_target__(self, pos[0:2]+dp, pstar, jet)
         else:
             total_T += T
             dp = np.array([vx, vy]) * total_T
@@ -1346,9 +1460,10 @@ class MPCWAPFast(WindAwarePlanner):
             print(buf)
         return jet_id
 
-    def __dp__(self, p, pstar, T, this_id, jet):
+    def __dp__(self, p, pstar, T, this_id, jet, u):
         if jet.id == this_id:
             dp, dp_std = self.__get_stay_branch_length__(p, pstar, jet, T, this_id)
+            dt = np.linalg.norm(dp) / jet.magnitude
         else:
             if self.off_nominal:
                 dp = self.delta_p_expectation[jet.id,this_id]
@@ -1356,19 +1471,45 @@ class MPCWAPFast(WindAwarePlanner):
             else:
                 dp = self.delta_p[jet.id,this_id]
                 dp_std = self.delta_std[jet.id,this_id]
-        return dp, dp_std
+            dt = self.__t_btwn_alts__(p[2], jet.avg_alt, u)
+        return dp, dp_std, dt
 
     def __terminate_branch__(self, key, val):
         self.leaves[key] = val
         J = val[2]
-        if J < self.lowest_J_yet:
-            self.lowest_J_yet = J
+        t_branch = val[5]
+        J_N = J / t_branch
+        if J_N < self.best_J_N_yet:
+            self.best_J_N_yet = J_N
+            self.best_J_yet = J
+            self.best_t_yet = t_branch
+        elif J_N > self.worst_J_N_yet:
+            self.worst_J_N_yet = J_N
 
-    def __tree_search__(self, pos, prev_key, u, T, pstar, depth, J, policy, gamma):
+    def __t_btwn_alts__(self, a1, a2, u):
+        t = abs(a1 - a2) / abs(u)
+        return t
+
+    def __we_should_prune__(self, J, t_branch, depth, u):
+        return_val = False
+        if self.timenormalize:
+            if self.worst_J_N_yet > -np.inf:
+                h = abs(self.upper - self.lower)
+                additional_t = depth * h / u
+                if (t_branch + additional_t) != 0:
+                    J_N_best_case = J / (t_branch + additional_t)
+                    if (J_N_best_case > self.worst_J_N_yet):
+                        return_val = True
+        else:
+            if J > self.best_J_yet:
+                return_val = True
+        return return_val
+
+    def __tree_search__(self, pos, prev_key, u, T, pstar, depth, J, J_prev, policy, gamma, t_branch):
         self.curr_key += 1
         this_key = self.curr_key
         back_key = prev_key
-        val = np.array([back_key, pos[2], J, pos[0], pos[1]])
+        val = np.array([back_key, pos[2], J, pos[0], pos[1], t_branch])
         self.backedges[this_key] = val
 
         self.nodes_expanded += 1
@@ -1388,7 +1529,7 @@ class MPCWAPFast(WindAwarePlanner):
         for i, jet in enumerate(jets.jetstreams.values()):
             if jet.avg_alt > self.lower and jet.avg_alt < self.upper:
                 target_alt = jet.avg_alt
-                dp, dp_std = self.__dp__(pos, pstar, T, this_id, jet)
+                dp, dp_std, dt = self.__dp__(pos, pstar, T, this_id, jet, u)
                 new_pos = np.append(pos[0:2] + dp, target_alt)
                 gamma = gamma * np.ones(6) if len(gamma) == 1 else gamma
                 p = new_pos[0:2]
@@ -1402,6 +1543,8 @@ class MPCWAPFast(WindAwarePlanner):
                 if abs(gamma[3]) < 1e-6:
                     J_vel = Jv(p=p, pdot=jet.v, pstar=pstar[0:2])
                     J_vel_std = 0.
+                    print jet.avg_alt
+                    print jet.v
                 else:
                     J_vel, J_vel_std = range_J(Jv, p=p, pdot=jet.v, pstd=dp_std, pstar=pstar[0:2])
 
@@ -1410,15 +1553,39 @@ class MPCWAPFast(WindAwarePlanner):
                 else:
                     J_sample = self.__J_sample__(self, pos, new_pos, pstar, target_alt)
 
+                if abs(gamma[6]) < 1e-6:
+                    J_reachable = 0.
+                else:
+                    if depth == 1:
+                        J_reachable = Jr(p=p, pstar=pstar, jsi=self.jets)
+                    else:
+                        J_reachable = 0.
+
+                if abs(gamma[7]) < 1e-6:
+                    J_drift = 0.
+                else:
+                    J_drift = Jd(p=p, pstar=pstar, dp=self.dpmax)
+                    # if depth == 1:
+                        # J_drift = Jd(p=p, pstar=pstar, dp=self.dpmax)
+                    # else:
+                        # J_drift = 0.
+
                 J_fuel = 0.
-                # J_i = np.dot(np.array([J_pos, J_vel, J_pos_std**2, J_vel_std**2, J_fuel, J_sample]), gamma) + J
-                J_i = J_pos * gamma[0] + J
-                if depth == 1:
-                    J_i += J_vel * gamma[1]
-                if J_i > self.lowest_J_yet:
-                    return
-                policy_i = np.append(np.array(policy), np.array(target_alt))
-                self.__tree_search__(new_pos, this_key, u, T, pstar, depth-1, J_i, policy_i, gamma)
+                J_all = np.array([J_pos, J_vel, J_pos_std**2, J_vel_std**2, J_fuel, J_sample, J_reachable, J_drift])
+                J_curr = np.dot(J_all, gamma)
+                if self.timenormalize:
+                    J_i = 0.5 * (J_curr + J_prev) * dt + J
+                else:
+                    J_i = J_curr + J
+                if not self.__we_should_prune__(J_i, t_branch+dt, depth-1, u):
+                    policy_i = np.append(np.array(policy), np.array(target_alt))
+                    self.__tree_search__(new_pos, this_key, u, T, pstar, depth-1, J_i, J_curr, policy_i, gamma, t_branch+dt)
+                # if J_i > self.best_J_yet:
+                #     if t_branch < self.best_t_yet:
+                #         return
+                # elif J_i > self.worst_J_yet:
+                #     if t_branch < self.worst_t_yet:
+                #         return
 
     def __find_altitudes_for_sampling__(self, N, threshold):
         x_test = np.zeros(N)
@@ -1443,6 +1610,28 @@ class MPCWAPFast(WindAwarePlanner):
         x_bigger_than_next = np.array(x_compare_to_next > 0, dtype=np.int)
         x_local_max = (x_bigger_than_next + x_bigger_than_prev) == 2
         return np.array(x_local_max, dtype=np.int)
+
+    def __delta_p_between_alts__(self, u, z1, z2):
+        N = 500
+        x_test = np.zeros(N)
+        y_test = np.zeros(N)
+        z_test = np.linspace(z1, z2, N)
+        p_test = np.array([x_test, y_test, z_test])
+        vx, vy, std_x, std_y = self.predict(p_test)
+        mean_vx = np.mean(vx)
+        mean_vy = np.mean(vy)
+        dz = abs(z2 - z1)
+        t = abs(dz / u)
+        scaling_factor = abs((z_test[1] - z_test[0]) / u)
+        mean_std_x = np.mean(std_x**2)
+        mean_std_y = np.mean(std_y**2)
+        dx_std = np.sqrt(mean_std_x * t)
+        dy_std = np.sqrt(mean_std_y * t)
+        dx = mean_vx * t
+        dy = mean_vy * t
+        dp = np.array([dx, dy])
+        dp_std = np.array([dx_std, dy_std]).reshape(2)
+        return dp, dp_std
 
     def __delta_p_between_jetstreams__(self, u):
         if self.off_nominal:
@@ -1472,25 +1661,7 @@ class MPCWAPFast(WindAwarePlanner):
                     delta_std[jet1.id,jet2.id] = d_std
                     delta_std[jet2.id,jet1.id] = d_std
                 if i < j:
-                    z1 = jet1.avg_alt
-                    z2 = jet2.avg_alt
-                    z_test = np.linspace(z1, z2, N)
-                    p_test = np.array([x_test, y_test, z_test])
-                    # vx, vy = self.ev(p_test)
-                    vx, vy, std_x, std_y = self.predict(p_test)
-                    mean_vx = np.mean(vx)
-                    mean_vy = np.mean(vy)
-                    dz = abs(z2 - z1)
-                    t = abs(dz / u)
-                    scaling_factor = abs((z_test[1] - z_test[0]) / u)
-                    mean_std_x = np.mean(std_x**2)
-                    mean_std_y = np.mean(std_y**2)
-                    dx_std = np.sqrt(mean_std_x * t)
-                    dy_std = np.sqrt(mean_std_y * t)
-                    dx = mean_vx * t
-                    dy = mean_vy * t
-                    dp = np.array([dx, dy])
-                    dp_std = np.array([dx_std, dy_std]).reshape(2)
+                    dp, dp_std = self.__delta_p_between_alts__(u, jet1.avg_alt, jet2.avg_alt)
                     delta_p[jet1.id,jet2.id] = dp
                     delta_p[jet2.id,jet1.id] = dp
                     delta_std[jet1.id,jet2.id] = dp_std
@@ -1506,14 +1677,25 @@ class MPCWAPFast(WindAwarePlanner):
     def __min_leaf_J__(self, *args, **kwargs):
         min_J = np.inf
         for leaf_val in self.leaves.values():
-            if leaf_val[2] < min_J:
-                min_J = leaf_val[2]
+            t = leaf_val[5]
+            if self.timenormalize:
+                J_N = leaf_val[2] / t
+                if J_N < min_J:
+                    min_J = J_N
+            else:
+                J = leaf_val[2]
+                if J < min_J:
+                    min_J = J
         return min_J
 
     def __min_leaf__(self, *args, **kwargs):
         min_J = self.__min_leaf_J__()
         for leaf_key in self.leaves.keys():
-            this_J = self.leaves[leaf_key][2]
+            this_t = self.leaves[leaf_key][5]
+            if self.timenormalize:
+                this_J = self.leaves[leaf_key][2] / this_t
+            else:
+                this_J = self.leaves[leaf_key][2]
             if abs(this_J - min_J) < 1e-6:
                 return leaf_key
         return False
@@ -1531,7 +1713,11 @@ class MPCWAPFast(WindAwarePlanner):
         leaf = parsekw(kwargs, 'leaf', None)
         return_p = parsekw(kwargs, 'return_p', False)
         pos = self.backedges[leaf][1]
-        cost = self.backedges[leaf][2]
+        t = self.backedges[leaf][5]
+        if self.timenormalize:
+            cost = self.backedges[leaf][2] / t
+        else:
+            cost = self.backedges[leaf][2]
         pol = np.array(pos)
         J = np.array(cost)
         stem = self.backedges[leaf][0]
@@ -1539,11 +1725,16 @@ class MPCWAPFast(WindAwarePlanner):
         p1 = np.array(self.backedges[leaf][4])
         while True:
             pos = self.backedges[stem][1]
-            cost = self.backedges[stem][2]
+            t = self.backedges[stem][5]
+            if self.timenormalize:
+                cost = self.backedges[stem][2] / t
+            else:
+                cost = self.backedges[stem][2]
             pol = np.append(pos, pol)
             J = np.append(cost, J)
             p0 = np.append(self.backedges[stem][3], p0)
             p1 = np.append(self.backedges[stem][4], p1)
+            print stem
             if self.backedges[stem][0] == stem:
                 break
             stem = self.backedges[stem][0]
@@ -1576,7 +1767,7 @@ class MPCWAPFast(WindAwarePlanner):
         # ax.semilogx(chosen_J[-1], chosen_p[-1]*1e-3, 'ok')
         ax.plot(chosen_J, chosen_p*1e-3, '-k', linewidth=4)
         ax.plot(chosen_J[-1], chosen_p[-1]*1e-3, 'ok')
-        plt.setp(ax.get_xticklabels(), visible=False)
+        # plt.setp(ax.get_xticklabels(), visible=False)
         ax.set_xlim([0, ax.get_xlim()[1]])
         # ax.set_xlim([3*1e18, 4*1e18])
 

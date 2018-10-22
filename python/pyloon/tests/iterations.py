@@ -33,10 +33,10 @@ else:
     sx = np.zeros(len(vx))
     sy = np.zeros(len(vy))
 A = np.matrix([vx, vy, sx, sy])
-b = np.matrix(0.1)
+b = np.matrix(1.)
 C = np.matrix(np.ones(A.shape[1]))
 p = np.matrix(np.eye(A.shape[1]))
-y = np.matrix([0.,0.,0.,0.]).T
+y = np.matrix([4.,1.,0.,0.]).T
 I = np.matrix(np.eye(A.shape[1]))
 Z = np.matrix(np.zeros(A.shape[1])).T
 
@@ -90,9 +90,10 @@ if plotting:
     # ax.set_xlim([-1e10,L[y_all > 0.99*np.max(y_all)][0]])
     plt.show()
 else:
-    _P = matrix(2 * (A - y * C).T * (A - y * C))
+    # _P = matrix(2 * (A - y * C).T * (A - y * C))
     # _P = matrix(2 * (A.T * A))
-    _q = matrix((0 * C).T)
+    # _q = matrix((0 * C).T)
+    # _q = matrix((0 * C).T)
     sol = solvers.qp(_P, _q, _G, _h, _A, _b)
     x = np.squeeze(np.array(sol['x']))
     x /= np.sum(x)
@@ -101,10 +102,13 @@ else:
     # x[x < 0.05] = 0.0
     # x = x / np.linalg.norm(x)
     for i, xi in enumerate(x):
-        print("\t" + str(np.int(x_hat[i]*100)).zfill(2) + "% at\t" + str(np.int(vx[i])) + ", " + str(np.int(vy[i])))
+        print("\t" + str(np.int(x_hat[i]*100)).zfill(2) + "% at\t" + str(np.int(vx[i]*100)) + ", " + str(np.int(vy[i]*100)))
     print("\tOptimal vel:\t" + str(np.dot(x,vx)) + ", " + str(np.dot(x,vy)))
     print("\tOptimal std:\t" + str(np.dot(x,stdx)) + ", " + str(np.dot(x,stdy)))
-    print(np.dot(x,vx)**2 + np.dot(x,vy)**2)
+    print(np.sqrt(np.dot(x,vx)**2 + np.dot(x,vy)**2))
+    print(np.arctan2(np.dot(x,vy), np.dot(x,vx))*180/np.pi)
+    print(np.arctan2(y[1], y[0])*180/np.pi)
+
 
 
 

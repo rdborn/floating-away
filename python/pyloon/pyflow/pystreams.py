@@ -68,6 +68,11 @@ class JetStreamIdentifier:
         return return_str
 
     def spanning_quality(self):
+        v = self.best_we_can_do([0., 0.])
+
+        return np.linalg.norm(v)
+
+    def best_we_can_do(self, v):
         vx = np.zeros(len(self.jetstreams.keys()))
         vy = np.zeros(len(self.jetstreams.keys()))
         if len(vx) == 0:
@@ -79,22 +84,31 @@ class JetStreamIdentifier:
         A = np.matrix([vx, vy])
         C = np.matrix(np.ones(A.shape[1]))
         p = np.matrix(np.eye(A.shape[1]))
-        y = np.matrix([0.,0.]).T
+        y = np.matrix([v[0], v[1]]).T
         I = np.matrix(np.eye(A.shape[1]))
         Z = np.matrix(np.zeros(A.shape[1])).T
 
-        _P = matrix(2 * (A - y * C).T * (A - y * C))
-        _q = matrix((0 * C).T)
+        _P = matrix(2 * A.T * A)
+        _q = matrix((-2 * y.T * A).T)
         _G = matrix(-I)
         _h = matrix(Z)
         _A = None
         _b = None
 
+        # _P = matrix(2 * (A - y * C).T * (A - y * C))
+        # _q = matrix((0 * C).T)
+        # _G = matrix(-I)
+        # _h = matrix(Z)
+        # _A = None
+        # _b = None
+
         sol = solvers.qp(_P, _q, _G, _h, _A, _b)
         x = np.squeeze(np.array(sol['x']))
         x /= np.sum(x)
+        vx_best = np.dot(x, vx)
+        vy_best = np.dot(x, vy)
 
-        return (np.dot(x,vx)**2 + np.dot(x,vy)**2)
+        return np.array([vx_best, vy_best])
 
 """ NOT SUPPORTED """
 class ClusterIdentifier(JetStreamIdentifier):

@@ -1,0 +1,13 @@
+Review my most recent manuscript edit.
+Review accepted manuscript draft.
+Review the latest manuscript and note any edits.
+Audit software, removing extraneous pieces.
+Review simulation results, generating new plots as needed.
+Put updated plots in manuscript.
+Revisit simulation statistics and see if there isn't a better way to report them.
+Edit manuscript for clarity in tandem with Mac.
+DONE /// Edit Algorithm 1 for correctness (reset A and THETA when var thresh is exceeded, even if rho thresh is not)
+Practice presentation to MSL via Skype.
+Make a poster.
+Format % agents lost plot better.
+Format histograms better.

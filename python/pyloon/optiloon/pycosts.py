@@ -11,8 +11,8 @@ def J_position(*args, **kwargs):
     p = np.array(parsekw(kwargs, 'p', None))
     pstar = np.array(parsekw(kwargs, 'pstar', None))
 
-    J_position = np.linalg.norm(p - pstar)
-    return J_position
+    J_pos = np.linalg.norm(p - pstar)
+    return J_pos
 
 def J_velocity(*args, **kwargs):
     p = np.array(parsekw(kwargs, 'p', None))
@@ -23,8 +23,9 @@ def J_velocity(*args, **kwargs):
     phi = p - pstar
     norm_phi = np.linalg.norm(phi)
     phihat = phi / norm_phi if norm_phi > 0 else phi
-    J_velocity = (np.dot(phihat, pdothat)+1)
-    return J_velocity
+    J_vel = (np.dot(phihat, pdothat)+1)
+    # print J_vel
+    return J_vel
 
 def J_acceleration(*args, **kwargs):
     p = np.array(parsekw(kwargs, 'p', None))
@@ -36,8 +37,42 @@ def J_acceleration(*args, **kwargs):
     phidot = np.dot(phat, pdot) * phat
     phiddot = (((np.linalg.norm(pdot)**2 - 2 * np.linalg.norm(phidot)**2)) * phat + np.linalg.norm(phidot) * pdot)
     phiddot = phiddot / norm_p if norm_p > 0 else phiddot
-    J_acceleration = np.linalg.norm(phiddot)
-    return J_acceleration
+    J_accel = np.linalg.norm(phiddot)
+    return J_accel
+
+def J_reachable_set(*args, **kwargs):
+    p = np.array(parsekw(kwargs, 'p', None))
+    pstar = np.array(parsekw(kwargs, 'pstar', None))
+    jsi = parsekw(kwargs, 'jsi', None)
+    p = p[0:2]
+    pstar = pstar[0:2]
+
+    phi = p - pstar
+    norm_phi = np.linalg.norm(phi)
+    phihat = phi / norm_phi if norm_phi > 0 else phi
+    v_best = jsi.best_we_can_do([-phi[0], -phi[1]])
+    norm_v = np.linalg.norm(v_best)
+    vhat = v_best / norm_v if norm_v != 0 else v_best
+    J_reachable = (np.dot(phihat, vhat)+1)
+    print("Jr")
+    print J_reachable
+    return J_reachable
+
+def J_drift(*args, **kwargs):
+    p = np.array(parsekw(kwargs, 'p', None))
+    pstar = np.array(parsekw(kwargs, 'pstar', None))
+    dp = np.array(parsekw(kwargs, 'dp', None))
+    p = p[0:2]
+    pstar = pstar[0:2]
+    dp = dp[0:2]
+
+    phi = p - pstar
+    norm_phi = np.linalg.norm(phi)
+    phihat = phi / norm_phi if norm_phi > 0 else phi
+    norm_dp = np.linalg.norm(dp)
+    dphat = dp / norm_dp if norm_dp != 0 else dp
+    J_d = (np.dot(phihat, dphat)+1)
+    return J_d
 
 def range_J(cost_function, n, *args, **kwargs):
     p_mu = np.array(parsekw(kwargs, 'p', None))

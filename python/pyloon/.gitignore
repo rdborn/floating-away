@@ -3,4 +3,6 @@ fig/
 naives/
 mpcs/
 quadcosts/
+datasets/
 *.profile
+*.pyc

@@ -12,17 +12,222 @@ from pyutils.pyutils import parsekw
 # SETUP PARAMETERS
 #############################################
 
+case = '2b'
+# depths = [1, 2, 4, 8]
+depths = [1, 2, 4]
+# depths = [2, 4]
+# depths = [4]
+# parent_dir = './quadcosts/'
+parent_dir = './datasets/case-' + case + '/'
+
+persistently_bad = False
+t_started_being_bad = 0.0
+timenormalize = False
+
+if case == '0a':
+	planner = 'mpcfast'
+	cost = 'Jv + Jp'
+	restrict = False
+	restriction = 1.
+	timenormalize = False
+elif case == '0b':
+	planner = 'mpcfast'
+	cost = 'Jv + Jp'
+	restrict = True
+	restriction = 0.5
+	timenormalize = False
+elif case == '0c':
+	planner = 'mpcfast'
+	cost = 'Jv + Jp'
+	restrict = True
+	restriction = 0.25
+	timenormalize = False
+elif case == '1a':
+	planner = 'mpcfast'
+	cost = 'Jv'
+	restrict = False
+	restriction = 1.
+	timenormalize = False
+elif case == '1b':
+	planner = 'mpcfast'
+	cost = 'Jv'
+	restrict = True
+	restriction = 0.5
+	timenormalize = False
+elif case == '1c':
+	planner = 'mpcfast'
+	cost = 'Jv'
+	restrict = True
+	restriction = 0.25
+	timenormalize = False
+elif case == '2a':
+	planner = 'mpcfast'
+	cost = 'Jp'
+	restrict = False
+	restriction = 1.
+	timenormalize = False
+elif case == '2b':
+	planner = 'mpcfast'
+	cost = 'Jp'
+	restrict = True
+	restriction = 0.5
+	timenormalize = False
+elif case == '2c':
+	planner = 'mpcfast'
+	cost = 'Jp'
+	restrict = True
+	restriction = 0.25
+	timenormalize = False
+elif case == '2d':
+	planner = 'mpcfast'
+	cost = 'Jp'
+	restrict = False
+	restriction = 1.
+	timenormalize = True
+elif case == '2e':
+	planner = 'mpcfast'
+	cost = 'Jp'
+	restrict = True
+	restriction = 0.5
+	timenormalize = True
+elif case == '2f':
+	planner = 'mpcfast'
+	cost = 'Jp'
+	restrict = True
+	restriction = 0.25
+	timenormalize = True
+elif case == '2g':
+	planner = 'mpcfast'
+	cost = 'Jp + Jd_f'
+	restrict = False
+	restriction = 1.
+	timenormalize = False
+elif case == '2h':
+	planner = 'mpcfast'
+	cost = 'Jp + Jd_f'
+	restrict = True
+	restriction = 0.5
+	timenormalize = False
+elif case == '2i':
+	planner = 'mpcfast'
+	cost = 'Jp + Jd_f'
+	restrict = True
+	restriction = 0.25
+	timenormalize = False
+elif case == '2j':
+	planner = 'mpcfast'
+	cost = 'Jp + Jd_f'
+	restrict = False
+	restriction = 1.
+	timenormalize = True
+elif case == '2k':
+	planner = 'mpcfast'
+	cost = 'Jp + Jd_f'
+	restrict = True
+	restriction = 0.5
+	timenormalize = True
+elif case == '2l':
+	planner = 'mpcfast'
+	cost = 'Jp + Jd_f'
+	restrict = True
+	restriction = 0.25
+	timenormalize = True
+elif case == '2m':
+	planner = 'mpcfast'
+	cost = 'Jp + Jd'
+	restrict = False
+	restriction = 1.
+	timenormalize = False
+elif case == '2n':
+	planner = 'mpcfast'
+	cost = 'Jp + Jd'
+	restrict = False
+	restriction = 0.5
+	timenormalize = False
+elif case == '2o':
+	planner = 'mpcfast'
+	cost = 'Jp + Jd'
+	restrict = True
+	restriction = 0.25
+	timenormalize = False
+elif case == '2p':
+	planner = 'mpcfast'
+	cost = 'Jp + Jd'
+	restrict = False
+	restriction = 1.
+	timenormalize = True
+elif case == '2q':
+	planner = 'mpcfast'
+	cost = 'Jp + Jd'
+	restrict = True
+	restriction = 0.5
+	timenormalize = True
+elif case == '2r':
+	planner = 'mpcfast'
+	cost = 'Jp + Jd'
+	restrict = True
+	restriction = 0.25
+	timenormalize = True
+elif case == '3a':
+	planner = 'molchanov'
+	restrict = False
+	restriction = 1.
+	timenormalize = False
+elif case == '3b':
+	planner = 'molchanov'
+	restrict = True
+	restriction = 0.5
+	timenormalize = False
+elif case == '3c':
+	planner = 'molchanov'
+	restrict = True
+	restriction = 0.25
+	timenormalize = False
+elif case == '4a':
+	planner = 'pic'
+	restrict = False
+	restriction = 1.
+	timenormalize = False
+elif case == '4b':
+	planner = 'pic'
+	restrict = True
+	restriction = 0.5
+	timenormalize = False
+elif case == '4c':
+	planner = 'pic'
+	restrict = True
+	restriction = 0.25
+	timenormalize = False
+elif case == '5a':
+	planner = 'stayaloft'
+	restrict = False
+	restriction = 1.
+	timenormalize = False
+elif case == '5b':
+	planner = 'stayaloft'
+	restrict = False
+	restriction = 1.
+	timenormalize = False
+elif case == '5c':
+	planner = 'stayaloft'
+	restrict = False
+	restriction = 1.
+	timenormalize = False
+
+
+
 # Choose the planner algorithm and estimator scheme
 # options: montecarlo, mpc, mpcfast, ldp, wap, pic, naive
-planner = 'mpcfast'
+# planner = 'mpcfast'
 # planner = 'molchanov'
 alwayssample = False
 dontsample = True
 samplingtime = 0.1*300
-gamma = np.array([1.,1e4,0.,0.,0.,0.]) # tuning parameter for cost function (lower = care more about pos, less about vel)
-# gamma = np.array([1.,1e4,0.,0.,0.,0.]) # tuning parameter for cost function (lower = care more about pos, less about vel)
-# gamma = np.array([1.,0.,0.,0.,0.,0.]) # tuning parameter for cost function (lower = care more about pos, less about vel)
-# gamma = np.array([0.,1.,0.,0.,0.,0.]) # tuning parameter for cost function (lower = care more about pos, less about vel)
+# gamma = np.array([1.,1e4,0.,0.,0.,0.,0.,0.]) # tuning parameter for cost function (lower = care more about pos, less about vel)
+# gamma = np.array([1.,1e4,0.,0.,0.,0.,0.,0.]) # tuning parameter for cost function (lower = care more about pos, less about vel)
+# gamma = np.array([1.,0.,0.,0.,0.,0.,0.,1e5]) # tuning parameter for cost function (lower = care more about pos, less about vel)
+gamma = np.array([1.,0.,0.,0.,0.,0.,0.,0.]) # tuning parameter for cost function (lower = care more about pos, less about vel)
+# gamma = np.array([0.,1.,0.,0.,0.,0.,0.,0.]) # tuning parameter for cost function (lower = care more about pos, less about vel)
 while alwayssample and gamma[-1] != 0:
 	print("WOAH you sure about that?")
 # options: gpfe, knn1dgp, multi1dgp
@@ -45,8 +250,8 @@ offset =		0.0
 
 # IF environment = 'noaa' set the lat/lon center (origin) and span of the field
 origin =	np.array([37.4268, -122.1733])
-latspan =	200000.0
-lonspan =	200000.0
+latspan =	140000.0
+lonspan =	140000.0
 
 # Upper and lower altitude bounds for the balloon
 lower = 5000.0
@@ -155,7 +360,7 @@ def vel_cost(pos, pstar, v):
 #############################################
 
 while True:
-	for depth in range(4,5):
+	for depth in depths:
 		LS = LoonSim(planner=planner,
 					environment=environment,
 					fieldestimator=fieldestimator,
@@ -185,7 +390,10 @@ while True:
 					plottofile=plottofile,
 					resamplethreshold=resamplethreshold,
 					trusttime=trusttime,
-					samplingtime=samplingtime)
+					samplingtime=samplingtime,
+					restrict=restrict,
+					restriction=restriction,
+					timenormalize=timenormalize)
 
 		# points_to_sample = np.sort(np.random.uniform(lower, upper, n_samples))
 		movie_name = planner + '_' + \
@@ -193,7 +401,7 @@ while True:
 					environment + '_' + \
 					datetime.datetime.now().strftime('%Y%m%d%H%M%S%f')
 		record_name = movie_name
-		out_plot_folder = './quadcosts/fig_' + movie_name + '/'
+		out_plot_folder = parent_dir + 'fig_' + movie_name + '/'
 		movie_folder = out_plot_folder
 		record_folder = out_plot_folder
 
@@ -285,12 +493,24 @@ while True:
 							pstar=pstar,
 							depth=depth,
 							gamma=gamma)
-			if plot:
-				if plottofile:
-					LS.plot(outfile=out_file, planner=planner)
+			# if plot:
+			# 	if plottofile:
+			# 		LS.plot(outfile=out_file, planner=planner)
+			# 	else:
+			# 		LS.plot(planner=planner)
+			if planner == 'stayaloft':
+				if pol < 0:
+					u = 0.
+					dt = 0.
+					T = 180.
+					while (T - dt) > 0.0:
+						LS.propogate(u, alwayssample=alwayssample, dontsample=dontsample)
+						dt += 1.0 / LS.loon.Fs
 				else:
-					LS.plot(planner=planner)
-			if planner == 'naive':
+					u = 5.
+					print pol
+					get_there(LS, pol, u, T, exact=True)
+			elif planner == 'naive':
 				if pol[0] < 0:
 					# Figure out if we should go up or down first
 					pos = LS.loon.get_pos()
@@ -320,12 +540,20 @@ while True:
 						else:
 							LS = get_there(LS, pol[i], u, T, exact=False)
 			elif planner == 'pic':
-				u = pol
-				dt = 0.
-				T = 180.
-				while (T - dt) > 0.0:
-					LS.propogate(u, alwayssample=alwayssample, dontsample=dontsample)
-					dt += 1.0 / LS.loon.Fs
+				pos = LS.loon.get_pos()
+				if LS.tcurr == 0.:
+					get_there(LS, (lower+upper)/2, u, T, exact=True)
+				elif pos[2] < lower:
+					get_there(LS, lower, u, T, exact=True)
+				elif pos[2] > upper:
+					get_there(LS, upper, u, T, exact=True)
+				else:
+					u = pol
+					dt = 0.
+					T = 180.
+					while (T - dt) > 0.0:
+						LS.propogate(u, alwayssample=alwayssample, dontsample=dontsample)
+						dt += 1.0 / LS.loon.Fs
 			elif planner == 'mpcfast':
 				if LS.off_nominal():
 					print("Off-nominal Policy:")
@@ -370,7 +598,8 @@ while True:
 			pos = LS.loon.get_pos()
 			print("New position:")
 			print("\t(" + str(np.int(pos[0])) + ", " + str(np.int(pos[1])) + ", " + str(np.int(pos[2])) + ")")
-
+			print("Simulation time:")
+			print("\t" + str(LS.tcurr / 3600.))
 			all_lats = np.array(LS.loon_history['x'][:])
 			all_lons = np.array(LS.loon_history['y'][:])
 			all_dists = np.sqrt(all_lats**2 + all_lons**2)
@@ -379,6 +608,15 @@ while True:
 			# TODO: make a better stopping criteria
 			# if avg_dists[-1] > 20000:
 				# break
+			if np.linalg.norm(pos[:2]) > 125000:
+				if persistently_bad:
+					if abs(LS.tcurr - t_started_being_bad) > 3600:
+						break
+				else:
+					persistently_bad = True
+					t_started_being_bad = LS.tcurr
+			else:
+				persistently_bad = False
 
 		# Write history to csv file
 		t = LS.loon_history['t'][:]

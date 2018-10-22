@@ -1,5 +1,52 @@
 import numpy as np
 from scipy.stats import norm
+from scipy.interpolate import griddata
+import matplotlib.pyplot as plt
+
+def pfields(label, values):
+    msg = "{:10}".format(label) + "|"
+    divider = "\n-----------"
+    for v in values:
+        msg = msg + "{:>10}".format(v) + " |"
+        divider = divider + "------------"
+    msg = msg + divider
+    print(msg)
+    return msg
+
+def prow(label, values):
+    msg = "{:10}".format(label) + "|"
+    divider = "\n-----------"
+    for v in values:
+        msg = msg + "{:10.2f}".format(v) + " |"
+        divider = divider + "------------"
+    msg = msg + divider
+    print(msg)
+    return msg
+
+def phead(head, length):
+    msg = ("{:*^" + str(length) + "}").format("")
+    msg = msg + "\n" + ("{:*^" + str(length) + "}").format(" " + head + " ")
+    msg = msg + "\n" + ("{:*^" + str(length) + "}").format("")
+    print(msg)
+    return msg
+
+def grid_uneven_data(data, tidx, T, N):
+    data_grid = []
+    for dataset in data:
+        t = dataset[tidx]
+        t_sim_end = t[-1]
+        t_grid = np.linspace(0, T, N)
+        t_lost_idx = (t_grid > t_sim_end)
+        dataset_grid = []
+        for i, field in enumerate(dataset):
+            if i != tidx:
+                field_grid = griddata(np.array(t), np.array(field), t_grid, method='cubic')
+                field_grid[t_lost_idx] = 1000000#field[-1]
+                dataset_grid.append(field_grid)
+            else:
+                dataset_grid.append(t_grid)
+        data_grid.append(dataset_grid)
+    return data_grid
 
 def breakpoint():
     raw_input("BREAKPOINT (press ENTER to continue)")
